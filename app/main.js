@@ -81,7 +81,7 @@ function project(p) {
 
 function burjStatus(sc, t) {
   if (t >= sc.tImpact) return 'COLLAPSED';
-  if (t >= sc.tBreak) return 'OVERTURNING';
+  if (t >= sc.tBreak) return 'COLLAPSING';
   if (t >= sc.tSpire) return 'SPIRE LOST';
   return 'STANDING';
 }
@@ -94,7 +94,7 @@ function buildState() {
   const jr = sc.stressMax(t, 'joint'), br = sc.stressMax(t, 'base');
   if (app.view === 'stress') {
     add('joint', 600, t >= sc.tSpire ? 'Spire joint failed · L156' : `Spire joint · L156 · ${jr.toFixed(2)}`, jr >= 1, true);
-    add('base', 25, t >= sc.tBreak ? 'Base overturning' : `Base · peak bending · ${br.toFixed(2)}`, br >= 1, true);
+    add('base', 25, t >= sc.tBreak ? 'Base crushing · tower collapses' : `Base · peak bending · ${br.toFixed(2)}`, br >= 1, true);
   } else if (app.view === 'xray') {
     add('steel', 700, 'Steel spire', false, true);
     add('joint', 600, 'Concrete → steel · L156', false, true);

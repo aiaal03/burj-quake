@@ -146,50 +146,44 @@ export function spireAngle(t) {
 }
 export function spireOmega() { const u = SPIRE_PIVOT; return SP0 * WSP * Math.sinh(WSP * u) + SPV0 * Math.cosh(WSP * u); }
 
-// ---------- main failure: overturning about the crushed base ----------
-// Rigid-body toppling about the compression-side pivot: θ'' = ω² sin θ, ω² = g·h_cm/k_p² ≈ 1.9 g / L for a tapered
-// tower (CM ≈ 0.38 L, k_p² ≈ 0.2 L²). Falling-chimney effect: inertia bending peaks ≈ 1/3 of the height, the upper part
-// lags → in-air fracture at Y_KINK (and a smaller one at Y_KINK2). θ'0 is solved so the top lands at T_IMPACT.
-export const L_TOPPLE = 570;
-const WT2 = 1.9 * G_FILM / L_TOPPLE, TH0 = 0.012;
-export const LAG1 = 0.10, LAG2 = 0.05;
-const lag1 = (th) => LAG1 * sm(ramp(th, 0.45, 1.05));
-const lag2 = (th) => LAG2 * sm(ramp(th, 0.75, 1.3));
-const TH_END = Math.PI / 2;
-const DT = 1 / 240, NSTEP = Math.ceil((38.5 - T_BREAK) / DT) + 2;
-function integrate(v0, out) {
-  let th = TH0, v = v0; if (out) { out[0] = th; }
-  const f = (x) => WT2 * Math.sin(Math.min(x, 2.2));
-  for (let i = 1; i < NSTEP; i++) {
-    const k1v = f(th), k1x = v, k2v = f(th + k1x * DT / 2), k2x = v + k1v * DT / 2, k3v = f(th + k2x * DT / 2), k3x = v + k2v * DT / 2, k4v = f(th + k3x * DT), k4x = v + k3v * DT;
-    th += DT / 6 * (k1x + 2 * k2x + 2 * k3x + k4x); v += DT / 6 * (k1v + 2 * k2v + 2 * k3v + k4v);
-    if (out) out[i] = th;
-  }
-  return th;
-}
-const THTAB = (() => {
-  // solve v0 s.t. θ_top(T_IMPACT) = θ - lag1 - lag2 = π/2
-  const target = TH_END + LAG1 + LAG2, iImp = Math.round((T_IMPACT - T_BREAK) / DT);
-  const tab = new Float64Array(NSTEP);
-  let lo = 0, hi = 2;
-  for (let it = 0; it < 50; it++) { const mid = (lo + hi) / 2; integrate(mid, tab); if (tab[iImp] > target) hi = mid; else lo = mid; }
-  integrate((lo + hi) / 2, tab); tab.v0 = (lo + hi) / 2; return tab;
+// ---------- main failure: base crushing → lean-in → vertical crush-down (telescoping) + crown topple ----------
+// Supertall concrete towers do not overturn as rigid bodies: the falling body would need internal bending ≈ W·L·sinθ/27
+// (falling-chimney result) and a base hinge carrying the full weight plus a large horizontal kick — the toe crushes and
+// slides, so the body drops. Observed tall-building collapses (WTC 1/2, Lu et al. supertall simulations: "vertical
+// pancake") are vertical/progressive; rigid overturns are short, stocky buildings (Alto Río, 15 storeys).
+// Model (film time u = t − T_BREAK, structural falls at FALL_SPEED 4 → 4.6 film-s ≈ 18 s real):
+//   lean-in 0–1.0 s : compression-side base walls crush (crush 0→1), lean to 0.06 rad toward +x, descent 8 m
+//   crush-down      : s = 8 + 16·u' + ½·a·u'² (u' = u − 1), a solved so s = S_END at T_IMPACT (a ≈ 0.36 g_film:
+//                     resisted fall, the crushed storeys absorb energy); lean grows to ≈ 0.22 rad (13°)
+//   crown (450–600 m) separates at u = 3.2 (34.0 film) and topples about the body top's +x edge onto the pile,
+//                     landing at T_IMPACT; the main body has telescoped into a rubble mound (≈ 35 m high, ≈ 180 m radius)
+export const S_END = 430, U_END = T_IMPACT - T_BREAK, U_SEP = 3.2, CROWN_Y = 450, CROWN_L = 150;
+export const LEAN_MAX = 0.22, MOUND_H = 35, MOUND_R0 = 70, MOUND_R1 = 110, MOUND_X = 20;
+const ACC = (S_END - 8 - 16 * (U_END - 1)) * 2 / ((U_END - 1) ** 2);
+export const CRUSH_KAPPA = ACC / G_FILM;            // ≈ 0.36 (WTC ≈ 0.6–0.7; stronger concrete core → slower)
+const WCR = Math.sqrt(3 * G_FILM / (2 * CROWN_L));   // pivoted crown block
+const CR0 = 0.03, CRV0 = (() => {                    // solve initial kick so tilt reaches CROWN_END at T_IMPACT
+  const T = U_END - U_SEP, target = 1.74 - LEAN_MAX;   // comes to rest sloping from the pile top down to the ground
+  return (target - CR0 * Math.cosh(WCR * T)) * WCR / Math.sinh(WCR * T);
 })();
-export const TOPPLE_V0 = THTAB.v0;      // initial angular velocity (rad / film-s)
-function thetaRaw(t) { const x = (t - T_BREAK) / DT; if (x <= 0) return TH0; const i = Math.min(NSTEP - 2, Math.floor(x)); return lerp(THTAB[i], THTAB[i + 1], Math.min(1, x - i)); }
-// main break state: th (lower body 30–210 m), th1 (210–450 m), th2 (450–600 m) rotation about z (rad),
-// kink = th - th1, crush = base crushing 0..1, drop = crush height loss (m), raft = raft tilt (rad), imp = 0..1 after impact
+function descent(u) {
+  if (u <= 0) return 0;
+  if (u < 1) return 8 * u * u;
+  const v = Math.min(u, U_END) - 1; return 8 + 16 * v + 0.5 * ACC * v * v;
+}
+export function moundAt(s) { const k = clamp(s / S_END); return { h: MOUND_H * Math.pow(k, 0.6), r: MOUND_R0 + MOUND_R1 * k }; }
+// returns { th: lean (rad, +x), drop: descent s (m), crush 0..1, u, imp 0..1 after impact, sep: crown separated,
+//   crown: crown extra tilt about its pivot (rad), rubbleH, rubbleR, th1/th2 (= th, compatibility), kink 0, raft 0 }
 export function breakState(t) {
-  const crush = sm(ramp(t, T_BREAK, T_BREAK + 1.2));
-  const raft = 0.035 * sm(ramp(t, T_BREAK - 0.2, T_BREAK + 2.5));
-  const drop = 30 * 0.45 * crush;
-  if (t <= T_BREAK) return { th: 0, th1: 0, th2: 0, kink: 0, drop, crush, raft, u: 0, imp: 0 };
-  const u = t - T_BREAK, raw = thetaRaw(t);
-  // start from 0 rotation (θ0 is the sway tilt already drawn) — blend the offset away in 0.3 s
-  const r = raw - TH0 * (1 - sm(u / 0.3));
-  const th = Math.min(r, TH_END), th1 = Math.min(r - lag1(r), TH_END), th2 = Math.min(r - lag1(r) - lag2(r), TH_END);
+  const u = t - T_BREAK;
+  const crush = sm(ramp(u, 0, 1.0));
+  if (u <= 0) return { th: 0, th1: 0, th2: 0, kink: 0, drop: 0, crush: 0, raft: 0, u: 0, imp: 0, sep: false, crown: 0, rubbleH: 0, rubbleR: MOUND_R0 };
+  const th = 0.06 * sm(u / 1.0) + (LEAN_MAX - 0.06) * sm(ramp(u, 0.8, 4.2));
+  const s = descent(u), m = moundAt(s);
+  let crown = 0; const sep = u >= U_SEP;
+  if (sep) { const v = Math.min(u, U_END) - U_SEP; crown = CR0 * Math.cosh(WCR * v) + CRV0 / WCR * Math.sinh(WCR * v); }
   const imp = sm(ramp(t, T_IMPACT, T_IMPACT + 0.6));
-  return { th, th1, th2, kink: th - th1, drop, crush, raft, u, imp };
+  return { th, th1: th, th2: th, kink: 0, drop: s, crush, raft: 0, u, imp, sep, crown, rubbleH: m.h, rubbleR: m.r };
 }
 export { clamp, sm, ramp, lerp };
 
@@ -227,7 +221,9 @@ function stressAtP(y, t, B, J, br, spireGone) {
     dc += 0.03 * B * Math.max(0, Math.sin((y - 150) / 49.5 * Math.PI * 2)) * (y > 150 ? 1 : 0);   // setback tiers
     dc = Math.min(Math.max(dc, 0), Math.max(B, dc * 0.999));     // never above the base value
     dc = Math.max(dc, J * gauss(y, Y_JOINT, 22));
-    if (br) dc = Math.max(dc, 1.25 * sm(ramp(br.th, 0.15, 0.5)) * gauss(y, Y_KINK, 22), 1.1 * sm(ramp(br.th, 0.4, 0.8)) * gauss(y, Y_KINK2, 20));
+    // after the base fails: crush front stays > 1 (base, via B); the crown joint (≈450 m, a setback/outrigger zone) heats
+    // to failure as the leaning body's top bends — it lets go at U_SEP
+    if (br) dc = Math.max(dc, (0.75 + 0.5 * sm(ramp(br.u, 1.2, U_SEP))) * gauss(y, CROWN_Y, 20));
     return dc;
   }
   if (spireGone) return 0;                            // detached spire is a free body — no stress
@@ -301,18 +297,15 @@ export function bldFailTime(h, style, seed = 0.5) {
   return 1e9;
 }
 export function bldDC(h, style, seed, t) { const b = beatAt(t); return b.m ? bldRatio(h, style, seed, b) : 0; }
-// time a city building at (x, z) of height h is struck by the toppling Burj (1e9 = not in the path).
-// Tower falls toward +x about the base pivot (x ≈ 18); body half-width ≈ 40 m; top lands at x ≈ 590–620.
-export function fallCrushTime(x, z, h) {
-  if (Math.abs(z) > 45 || x < 45 || x > 660) return 1e9;
-  for (let t = T_BREAK; t <= T_IMPACT + 0.05; t += 0.02) {
-    const th = breakState(t).th2 || 1e-6;
-    if (x - 18 > 600 * Math.sin(th) + 10) continue;            // the shaft does not reach this far yet
-    const yAxis = (x - 18) / Math.tan(th);                     // axis height above the pivot at this x
-    if (yAxis - 30 <= h) return t;
-  }
-  return T_IMPACT;
+// time a city building at (x, z) of height h is buried by the Burj's rubble (1e9 = not reached): the debris mound and
+// ejecta front spreads to rubbleR (≈ 70 → 180 m) around the base; the toppling crown lands on a strip toward +x.
+export function rubbleCrushTime(x, z, h) {
+  const r = Math.hypot(x - MOUND_X, z) - 12;
+  if (r <= MOUND_R0 + MOUND_R1) for (let t = T_BREAK; t <= T_IMPACT + 0.05; t += 0.05) if (breakState(t).rubbleR >= r) return t;
+  if (x > 90 && x < 300 && Math.abs(z) < 40) return T_IMPACT - 0.05;     // crown landing strip
+  return 1e9;
 }
+export const fallCrushTime = rubbleCrushTime;   // old name (compatibility)
 
 
 // =====================================================================================================================
@@ -408,7 +401,8 @@ export function makeScenario(Mag) {
       const d = 1.4 * sp.Sd * gB(t, T) * (1 - sm(ramp(t, dur, dur + 4))), f = Math.min(5, 1 / T);
       return d * (0.85 * Math.sin(2 * Math.PI * f * t + seed * 6.283) + 0.15 * Math.sin(2 * Math.PI * f * 1.7 * t + seed * 17.0));
     },
-    fallCrushTime(x, z, h) { const tf = fallCrushTime(x, z, h); return isFinite(tBreak) && tf < 1e8 ? tf - BREAK_SHIFT : Infinity; },
+    rubbleCrushTime(x, z, h) { const tf = rubbleCrushTime(x, z, h); return isFinite(tBreak) && tf < 1e8 ? tf - BREAK_SHIFT : Infinity; },
+    fallCrushTime(x, z, h) { return sc.rubbleCrushTime(x, z, h); },
   };
   return sc;
 }
@@ -416,5 +410,5 @@ export function makeScenario(Mag) {
 export const FILM = {
   M: null, tSpire: T_SPIRE, tBreak: T_BREAK, tImpact: T_IMPACT, end: 38,
   amp, ground, swayEnv, sway, swaySlope, dcBase, dcJoint, dcLink, stressAt, linkAt, stressProfile,
-  stressMax: maxRatio, damage, spireAngle, spireOmega, breakState, bldFailTime, bldSway, fallCrushTime,
+  stressMax: maxRatio, damage, spireAngle, spireOmega, breakState, bldFailTime, bldSway, fallCrushTime, rubbleCrushTime,
 };

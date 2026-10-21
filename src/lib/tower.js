@@ -1,7 +1,7 @@
 // Procedural Burj Khalifa: Y-plan (3 wings + hex core), 24 spiral setbacks, pinnacle + spire.
 // Built as a chain of rigid segments so it can sway (small rotations per joint) and break/topple.
 import * as THREE from 'three';
-import { SBINS, DEF_SCALE, G_FILM, SPIRE_PIVOT, FILM } from './quake.js';
+import { SBINS, DEF_SCALE, G_FILM, SPIRE_PIVOT, FILM, MOUND_X } from './quake.js';
 
 export const HT = 828;
 const WING_A = [90, 210, 330].map((d) => d * Math.PI / 180);
@@ -10,11 +10,12 @@ const SETBACK = Array.from({ length: 24 }, (_, j) => 140 + j * 18.5);   // 'two 
 export const BOUNDS = [...Array.from({ length: 21 }, (_, i) => i * 30), 645, 690, 740, 790, 828];
 // Y_SPIRE: concrete→steel joint. Real: RC to L155/156 (≈585–600 m), steel spire above [A1]. Our concrete wings/core end
 // at 600 m — the segment boundary that IS the material transition — so the spire (600–828, 228 m ≈ real ~244 m
-// unoccupied spire) detaches there. Y_BREAK: top of the base crush zone (overturning failure at the base).
-// Y_KINK / Y_KINK2: in-flight fractures of the falling shaft (falling-chimney effect, ≈1/3 and ≈3/4 height).
-export const Y_SPIRE = 600, Y_BREAK = 30, Y_KINK = 210, Y_KINK2 = 450;
-export const PIVOT_X = 18;                 // overturning pivot: compression side (+x = fall direction), inside the footprint
-export const FALL_DIR = [1, 0, 0];         // tower overturns toward +x (S14 camera should look along ±z)
+// unoccupied spire) detaches there. Y_BREAK: top of the base crush zone (the collapse starts at the base).
+// Y_CROWN: the crown (450–600 m) breaks off the telescoping body and topples onto the pile. Y_FOLD: the falling spire
+// folds at ≈1/3 of its length (690 m). Y_KINK/Y_KINK2 kept as aliases for older callers.
+export const Y_SPIRE = 600, Y_BREAK = 30, Y_CROWN = 450, Y_FOLD = 690, Y_KINK = 450, Y_KINK2 = 450;
+export const PIVOT_X = 18;                 // lean pivot: compression-side toe (+x = lean / crown-topple direction)
+export const FALL_DIR = [1, 0, 0];         // lean + crown topple toward +x (side cameras should look along ±z)
 
 function wingDims(k, y) {
   let c = 0; for (let j = 0; j < SETBACK.length; j++) if (j % 3 === k && SETBACK[j] < y - 1e-3) c++;
@@ -335,41 +336,69 @@ export function makeTower(scenario = FILM) {
     return REL;
   }
   // pose the whole tower for time t. returns state (world positions of key points)
-  function setScenario(sc) { SC = sc || FILM; REL = null; state.spireLand = null; }
+  function setScenario(sc) { SC = sc || FILM; REL = null; state.spireLand = null; state.crownLand = null; }
+  // fracture faces at the crown break (450 m): body top (faces up) and crown underside (faces down). Shown once separated.
+  const iCr = segs.findIndex((sg) => sg.s0 >= Y_CROWN), iFold = segs.findIndex((sg) => sg.s0 >= Y_FOLD);
+  const capMesh = (y, base, down) => {
+    const g = new GB(); g.cap(outline(y + (down ? 0.5 : -0.5)), y, base, 1, 2); const geo = g.geo();
+    if (down) { const n = geo.attributes.normal.array; for (let i = 1; i < n.length; i += 3) n[i] = -n[i]; const ix = geo.index.array; for (let i = 0; i < ix.length; i += 3) { const tmp = ix[i + 1]; ix[i + 1] = ix[i + 2]; ix[i + 2] = tmp; } }
+    const m = new THREE.Mesh(geo, mat); m.castShadow = m.receiveShadow = true; m.visible = false; return m;
+  };
+  const bodyCap = capMesh(Y_CROWN, segs[iCr - 1].s0, false); segs[iCr - 1].g.add(bodyCap);
+  const crownCap = capMesh(Y_CROWN, Y_CROWN, true); segs[iCr].g.add(crownCap);
+  // rubble mound: unit dome (radius 1, height 1) with deterministic lumps; scaled to (rubbleR, rubbleH, rubbleR)
+  const mound = (() => {
+    const NR = 14, NA2 = 56, pos = [], idx = [];
+    for (let j = 0; j <= NR; j++) for (let k = 0; k <= NA2; k++) {
+      const rho = j / NR, a = k / NA2 * Math.PI * 2, n = j === 0 ? 0 : (hash(j * 7 + (k % NA2), 9) - 0.5);
+      const rr = rho * (1 + 0.08 * Math.sin(a * 3 + 1) + (j === NR ? 0 : 0.06 * n));
+      const h = j === NR ? -0.06 : Math.pow(1 - rho * rho, 1.2) * (0.86 + 0.28 * hash(j * 13 + (k % NA2), 5)) + 0.1 * Math.sin(a * 5) * rho * (1 - rho);
+      pos.push(Math.cos(a) * rr, h, Math.sin(a) * rr);
+    }
+    for (let j = 0; j < NR; j++) for (let k = 0; k < NA2; k++) { const a = j * (NA2 + 1) + k, b = a + NA2 + 1; idx.push(a, a + 1, b, a + 1, b + 1, b); }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx);
+    const ng = g.toNonIndexed(); ng.computeVertexNormals();
+    const m = new THREE.Mesh(ng, new THREE.MeshStandardMaterial({ color: '#958a7c', roughness: 0.97, metalness: 0, flatShading: true }));
+    m.castShadow = m.receiveShadow = true; m.visible = false; m.name = 'rubble'; return m;
+  })();
+  root.add(mound);
+  Object.assign(state, { crushFront: new THREE.Vector3(), crownCM: new THREE.Vector3(), crownLand: null, rubble: { h: 0, r: 0, x: 0, z: 0 } });
+  const Cb = new THREE.Vector3(), E = new THREE.Vector3(), GO = new THREE.Vector3(), F = new THREE.Vector3();
+  const qTh = new THREE.Quaternion(), qCr = new THREE.Quaternion(), qFold = new THREE.Quaternion();
   function pose(t, sc) {
     if (sc && sc !== SC) setScenario(sc);
     SC.ground(0, 0, t, G);
     podG.position.set(G.hx, G.y, G.hz);
-    const s = SC.sway(t), sa = SC.spireAngle(t), br = SC.breakState(t);
+    const s = SC.sway(t), sa = SC.spireAngle(t), br = SC.breakState(t), broken = t > SC.tBreak;
     U.uDmg.value = SC.damage(t); SC.stressProfile(t, U.uS.value, U.uL.value);
-    if (t > SC.tBreak) U.uBend.value.set(1, 0);
+    if (broken) U.uBend.value.set(1, 0);
     else { const bx = s.x || 1e-6, bz = s.z || 0, l = Math.hypot(bx, bz); U.uBend.value.set(bx / l, bz / l); }
-    const fs = 1 - (t > SC.tBreak ? Math.min(1, (t - SC.tBreak) / 1.0) ** 2 * (3 - 2 * Math.min(1, (t - SC.tBreak) / 1.0)) : 0);
-    const cs = 1 - 0.45 * br.crush;
+    const fs = 1 - (broken ? Math.min(1, (t - SC.tBreak) / 1.0) ** 2 * (3 - 2 * Math.min(1, (t - SC.tBreak) / 1.0)) : 0);
+    const cs = 1 - 0.6 * br.crush;                     // crush zone (0–30 m) loses height on the compression side
     chain(t, s, fs, cs);
-    const GO = new THREE.Vector3(G.hx, G.y, G.hz);
-    // pivots (tower frame): base pivot at top of crush zone, compression (+x) side; kink hinges on the back (−x) face
-    const Cb = cp[1].clone().add(V.set(PIVOT_X, 0, 0));
-    const iK1 = segs.findIndex((sg) => sg.s0 >= Y_KINK), iK2 = segs.findIndex((sg) => sg.s0 >= Y_KINK2);
-    const qTh = new THREE.Quaternion().setFromAxisAngle(AZ, -br.th), qL1 = new THREE.Quaternion().setFromAxisAngle(AZ, br.th - br.th1), qL2 = new THREE.Quaternion().setFromAxisAngle(AZ, br.th1 - br.th2);
-    const K1 = cp[iK1].clone().add(V.set(-24, 0, 0).applyQuaternion(cq[iK1])).sub(Cb).applyQuaternion(qTh).add(Cb);
-    const K2 = cp[iK2].clone().add(V.set(-20, 0, 0).applyQuaternion(cq[iK2])).sub(Cb).applyQuaternion(qTh).add(Cb).sub(K1).applyQuaternion(qL1).add(K1);
-    const qRaft = new THREE.Quaternion().setFromAxisAngle(AZ, -br.raft);
-    const toWorld = (p) => p.applyQuaternion(qRaft).add(GO);   // raft tilts about the axis foot
+    GO.set(G.hx, G.y, G.hz);
+    // lean pivot: compression-side toe at the top of the crush zone; then the whole body descends by br.drop
+    Cb.copy(cp[1]).add(V.set(PIVOT_X, 0, 0));
+    qTh.setFromAxisAngle(AZ, -br.th);
+    // crown pivot: +x edge of the body top (450 m), after lean + descent
+    E.copy(cp[iCr]).add(V.set(22, 0, 0).applyQuaternion(cq[iCr])).sub(Cb).applyQuaternion(qTh).add(Cb); E.y -= br.drop;
+    if (br.sep) E.y = Math.max(E.y, br.rubbleH * 0.85);   // the crown rides on the pile; it cannot sink into it
+    qCr.setFromAxisAngle(AZ, -br.crown);
+    const rubH = br.rubbleH, mx = MOUND_X + 30 * Math.min(1, br.drop / 430);
+    let foldSet = false;
     for (let i = 0; i < N; i++) {
-      const sg = segs[i], wp = state.segWorld[i];
+      const sg = segs[i], wp = state.segWorld[i], h = (sg.s1 - sg.s0) * (i === 0 ? cs : 1);
       P.copy(cp[i]); Q.copy(cq[i]);
-      if (i >= 1) {
-        P.sub(Cb).applyQuaternion(qTh).add(Cb); Q.premultiply(qTh);
-        if (i >= iK1) { P.sub(K1).applyQuaternion(qL1).add(K1); Q.premultiply(qL1); }
-        if (i >= iK2) { P.sub(K2).applyQuaternion(qL2).add(K2); Q.premultiply(qL2); }
-        if (br.imp > 0) {   // impact break-up: pieces settle/skew independently
-          QR.setFromAxisAngle(XA, br.imp * 0.07 * (hash(i, 1) - 0.5)); Q.premultiply(QR);
-          QR.setFromAxisAngle(YA, br.imp * 0.05 * (hash(i, 2) - 0.5)); Q.premultiply(QR);
-          P.y -= br.imp * (4 + 10 * hash(i, 3)); P.z += br.imp * 8 * (hash(i, 4) - 0.5);
+      if (i >= 1 && broken) {
+        P.sub(Cb).applyQuaternion(qTh).add(Cb); Q.premultiply(qTh); P.y -= br.drop;
+        if (i >= iCr && br.sep) { P.sub(E).applyQuaternion(qCr).add(E); Q.premultiply(qCr); }
+        if (br.imp > 0 && i >= iCr) {   // crown breaks up on landing: pieces settle/skew independently
+          QR.setFromAxisAngle(XA, br.imp * 0.08 * (hash(i, 1) - 0.5)); Q.premultiply(QR);
+          QR.setFromAxisAngle(YA, br.imp * 0.06 * (hash(i, 2) - 0.5)); Q.premultiply(QR);
+          P.y -= br.imp * (3 + 6 * hash(i, 3)); P.z += br.imp * 6 * (hash(i, 4) - 0.5); P.x += br.imp * 4 * (i - iCr);
         }
       }
-      P.applyQuaternion(qRaft).add(GO); Q.premultiply(qRaft);
+      P.add(GO);
       let vis = true;
       if (i >= iSp && t >= SC.tSpire) {
         if (t < SC.tSpire + SPIRE_PIVOT) { spireHinged(t); P.copy(spP[i]); Q.copy(spQ[i]); SC.ground(0, 0, t, G); }
@@ -378,17 +407,37 @@ export function makeTower(scenario = FILM) {
           QR.setFromAxisAngle(AZ, R.w * u);
           P.set(R.cm.x + R.v.x * u, R.cm.y + R.v.y * u - 0.5 * G_FILM * u * u, R.cm.z + R.v.z * u).add(V.copy(R.off[i]).applyQuaternion(QR));
           Q.copy(QR).multiply(R.q[i]);
+          // fold at ≈1/3 length: the slender upper spire lags the tumbling lower part and buckles at 690 m
+          if (i >= iFold) {
+            if (!foldSet) { F.copy(P); foldSet = true; }
+            qFold.setFromAxisAngle(AZ, -0.75 * sm01((u - 0.25) / 0.7));
+            P.sub(F).applyQuaternion(qFold).add(F); Q.premultiply(qFold);
+          }
           if (t >= R.tl) vis = false;
         }
+      }
+      // telescoping: a storey block fully below the rubble top is gone (crushed into the pile)
+      if (broken && i < (br.sep ? iCr : iSp)) {
+        V.set(0, h, 0).applyQuaternion(Q).add(P);
+        if (Math.max(V.y, P.y) < rubH + GO.y - 1.5) vis = false;
+        if (i === 0 && br.drop > 12) vis = false;
       }
       sg.g.visible = vis;
       sg.g.position.copy(P); sg.g.quaternion.copy(Q);
       sg.g.scale.set(1, i === 0 ? cs : 1, 1);
       wp.p.copy(P); wp.q.copy(Q);
     }
+    bodyCap.visible = crownCap.visible = !!br.sep && t < SC.tImpact + 0.6 && segs[iCr - 1].g.visible;
+    if (br.sep) bodyCap.visible = segs[iCr - 1].g.visible;
+    // rubble mound (centre drifts a little toward the lean)
+    mound.visible = broken && br.drop > 0.5;
+    if (mound.visible) { mound.position.set(mx + GO.x, GO.y - 0.5, GO.z); mound.scale.set(br.rubbleR, Math.max(0.5, rubH), br.rubbleR * 0.92); }
     // key points
-    state.hinge.copy(Cb).applyQuaternion(qRaft).add(GO);                     // base pivot (dust / debris emitter)
-    state.kink.copy(K1).applyQuaternion(qRaft).add(GO); state.kink2.copy(K2).applyQuaternion(qRaft).add(GO);
+    state.crushFront.set(mx * 0.6 + GO.x, GO.y + rubH + 4, GO.z);
+    state.hinge.copy(state.crushFront);                                        // dust / debris emitter at the crush front
+    state.kink.copy(E).add(GO); state.kink2.copy(state.kink);                 // crown fracture
+    { const w = state.segWorld[iCr + 2]; state.crownCM.copy(V.set(0, 15, 0).applyQuaternion(w.q).add(w.p)); }
+    state.rubble.h = rubH; state.rubble.r = br.rubbleR; state.rubble.x = mx + GO.x; state.rubble.z = GO.z;
     { const j = iSp - 1, w = state.segWorld[j]; state.spireHinge.copy(V.set(0, segs[j].s1 - segs[j].s0, 0).applyQuaternion(w.q).add(w.p)); }
     { const j = t >= SC.tSpire ? iSp - 1 : N - 1, w = state.segWorld[j]; state.top.copy(V.set(0, segs[j].s1 - segs[j].s0, 0).applyQuaternion(w.q).add(w.p)); }
     { const w = state.segWorld[iSp]; state.spireCM.copy(V.set(0, 80, 0).applyQuaternion(w.q).add(w.p)); }
@@ -396,6 +445,7 @@ export function makeTower(scenario = FILM) {
     state.sway = s; state.br = br; state.sa = sa;
     return state;
   }
+  const sm01 = (x) => { x = Math.min(1, Math.max(0, x)); return x * x * (3 - 2 * x); };
   // a point on the facade (for glass shards): returns local-in-segment position + outward normal (tower frame, unswayed)
   function facadePoint(y, r1, r2) {
     if (y >= 600) { const a = r1 * 2 * Math.PI, rr = 10; return { p: [Math.cos(a) * rr, y, Math.sin(a) * rr], n: [Math.cos(a), 0, Math.sin(a)] }; }

@@ -63,7 +63,7 @@ export const CARDS = {
 const MAG_LINE = (M) => (M < 4 ? 'Barely a tremor' : M < 7 ? 'Low-rises start to rock' : M < 8 ? 'Short buildings fail'
   : M < 9 ? 'The fuses start to work' : M < 9.95 ? 'Beyond design' : 'Never recorded');
 export function pickCard(s, view) {
-  if (s.burjStatus === 'OVERTURNING') return 'base';
+  if (s.burjStatus === 'COLLAPSING') return 'base';
   if (s.burjStatus === 'SPIRE LOST') return 'spire';
   if (view === 'xray') return 'anatomy';
   if (view === 'stress') return s.M >= 9 ? 'spire' : 'base';

@@ -35,7 +35,7 @@ The overlay passes pointer events through, except on its panels.
 | `loadMax` | number | load ÷ capacity of the focused element. ≥ 1 shows `1.00` then `> 1` in red and flashes the LIMIT line once |
 | `stressBins` | number[] | load ÷ capacity per height bin from 0 to 828 m (48 bins in the engine); fills the mini elevation strip, with a red pulse at bins ≥ 1 |
 | `lowRiseDown`, `midRiseDown` | 0..100 | percent of each class collapsed |
-| `burjStatus` | `'STANDING' \| 'SPIRE LOST' \| 'OVERTURNING'` | status row; also chooses the info card and dashes the lost spire in the strip |
+| `burjStatus` | `'STANDING' \| 'SPIRE LOST' \| 'COLLAPSING'` | status row; also chooses the info card and dashes the lost spire in the strip |
 | `callouts` | `{id, x, y, visible, text, hot}[]` | 3D-anchored labels. `x`/`y` are CSS px relative to `root`, from your `project(x,y,z)`. `hot` gives a red dot, a pulsing ring and a red bar. Labels are kept clear of the panels, auto-sided and de-overlapped; ids that disappear are removed |
 
 The returned object also has `setView(v)`, `setSpeed(v)`, `destroy()` and `el`.

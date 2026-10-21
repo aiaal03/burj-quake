@@ -313,7 +313,7 @@ export function makeCity(K, opts) {
   // bands as strings for the HUD: 'low' | 'mid' | 'tower'
   for (const b of B) b.band = ['low', 'mid', 'tower'][b.band];
   for (const b of B) {
-    b.tc = b.tc ?? Math.min(Q.bldFailTime(b.h, b.style, b.seed), Q.fallCrushTime(b.x, b.z, b.h));
+    b.tc = b.tc ?? Math.min(Q.bldFailTime(b.h, b.style, b.seed), Q.rubbleCrushTime(b.x, b.z, b.h));
     if (!isFinite(b.tc)) b.tc = 1e9;
     b.dur = b.dur ?? (b.band === 'low' ? 1.3 + b.seed * 0.5 : b.band === 'mid' ? 2.2 + b.seed * 0.6 : 3.2);
   }
@@ -366,7 +366,7 @@ export function makeCity(K, opts) {
   const tcOf = (sc) => {
     if (!sc || sc === Q.FILM) return TL || (TL = B.map((b) => b.tc));
     let a = TC.get(sc); if (a) return a;
-    const ft = fnOf(sc, 'bldFailTime'), fc = fnOf(sc, 'fallCrushTime'); a = B.map((b) => { const v = Math.min(ft(b.h, b.style, b.seed), fc(b.x, b.z, b.h)); return isFinite(v) ? v : 1e9; }); TC.set(sc, a); return a;
+    const ft = fnOf(sc, 'bldFailTime'), fc = fnOf(sc, 'rubbleCrushTime'); a = B.map((b) => { const v = Math.min(ft(b.h, b.style, b.seed), fc(b.x, b.z, b.h)); return isFinite(v) ? v : 1e9; }); TC.set(sc, a); return a;
   };
   let calmSc, calmN = -1;
   function update(t, sc = null) {

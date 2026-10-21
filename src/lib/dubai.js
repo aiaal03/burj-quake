@@ -24,7 +24,8 @@ export async function setup(K) {
   const rift = makeRift(); scene.add(rift.mesh);
   const tower = makeTower(Q.FILM); scene.add(tower.root);
   scene.fog = new THREE.FogExp2('#d9b48a', 0.00009);
-  Object.assign(W_, { scene, sky, env0, env1, groundM, lake, city, cars, pl, rift, tower, quality, fxK: RT_ ? 0.45 : 1, dustThin: RT_ ? 2 : 1 });
+  const noDust = typeof location !== 'undefined' && new URLSearchParams(location.search).get('nodust') === '1';   // QA: inspect the structure under the dust
+  Object.assign(W_, { scene, sky, env0, env1, groundM, lake, city, cars, pl, rift, tower, quality, noDust, fxK: RT_ ? 0.45 : 1, dustThin: RT_ ? 2 : 1 });
   const T0 = performance.now();
   const L = buildFx(Q.FILM);
   const shardMat = new THREE.MeshStandardMaterial({ color: '#dfe6ee', metalness: 1, roughness: 0.025, side: THREE.DoubleSide, envMapIntensity: 1.8 });
@@ -111,29 +112,40 @@ function buildFx(sc) {
       for (let i = 0; i < 160; i++) { const a = r() * 6.28, sp = 20 + r() * 40, x = p.x + (r() - 0.5) * 60, z = p.z + (r() - 0.5) * 60;
         puff(sl.t + r() * 0.5, [x, gY(x, z, sl.t) + 4 + r() * 10, z], [Math.cos(a) * sp, 3 + r() * 6, Math.sin(a) * sp], 8 + r() * 3, 15, 70 + r() * 50, 0.6, 2.5, 0.45); } }
   }
-  // base overturning: crushing at the base pivot, in-flight fractures at kink/kink2, impact
-  let ic = new THREE.Vector3(300, 0, 0);
+  // base collapse: crush front at the base (continuous dust + ejecta while the body telescopes into the pile), crown
+  // fracture at 450 m, crown landing on the pile, radial dust surge from the mound
+  let ic = new THREE.Vector3(60, 0, 0);
   if (isFinite(tB)) {
-    const h = tower.pose(tB + 0.01, sc).hinge.clone();
-    for (let i = 0; i < 700 * fxK; i++) { const ts = tB + r() * (tI - tB); addDeb(ts, [h.x + (r() - 0.5) * 50, h.y + r() * 15, h.z + (r() - 0.5) * 50], 30, 12, 2 + r() * 4); }
-    for (let i = 0; i < 120; i++) puff(tB + r() * 0.5, [h.x + (r() - 0.5) * 40, h.y + r() * 10, h.z + (r() - 0.5) * 40], [(r() - 0.5) * 50, (r() - 0.2) * 15, (r() - 0.5) * 50], 6 + r() * 3, 10, 50 + r() * 40, 0.6, 1, 0.7);
-    for (let i = 0; i < 700; i++) { const ts = tB + r() * (tI - tB + 0.5);
-      puff(ts, [h.x + (r() - 0.5) * 60, Math.max(h.y, 4) + r() * 25, h.z + (r() - 0.5) * 60], [(r() - 0.5) * 30, 1 + r() * 4, (r() - 0.5) * 30], 7 + r() * 3, 20, 80 + r() * 60, 0.6, 2, 0.5);
-      const gx = h.x + (r() - 0.5) * 140, gz = h.z + (r() - 0.5) * 140; puff(ts, [gx, gY(gx, gz, ts) + 5, gz], [(r() - 0.5) * 40, 3, (r() - 0.5) * 40], 8, 20, 90 + r() * 50, 0.5, 3, 0.5); }
-    const k0 = Math.max(tB, tI - 2.1);
-    for (let i = 0; i < 240 * fxK; i++) { const ts = k0 + r() * (tI - k0); const st = tower.pose(ts, sc), k = r() < 0.6 ? st.kink : st.kink2;
-      addDeb(ts, [k.x + (r() - 0.5) * 20, k.y + (r() - 0.5) * 10, k.z + (r() - 0.5) * 20], 25, 6, 2 + r() * 4);
-      puff(ts, [k.x + (r() - 0.5) * 16, k.y + (r() - 0.5) * 10, k.z + (r() - 0.5) * 16], [(r() - 0.5) * 20, (r() - 0.5) * 8, (r() - 0.5) * 20], 4 + r() * 2, 8, 35 + r() * 25, 0.55, 0.5, 0.6); }
-    const impactPts = [];
-    { const st = tower.pose(tI, sc); for (let i = 0; i < tower.segs.length; i++) { const sg = tower.segs[i]; if (sg.s0 >= 60 && sg.s0 < 600) impactPts.push(st.segWorld[i].p.clone()); } }
-    if (impactPts.length) {
-      for (let i = 0; i < 600 * fxK; i++) { const p = impactPts[r() * impactPts.length | 0]; addDeb(tI + r() * 0.5, [p.x + (r() - 0.5) * 40, Math.max(p.y, 5) + r() * 20, p.z + (r() - 0.5) * 40], 70, 30, 2 + r() * 5); }
-      for (let i = 0; i < 700; i++) { const p = impactPts[r() * impactPts.length | 0]; const ts = tI + r() * 0.6;
-        puff(ts, [p.x + (r() - 0.5) * 50, Math.max(4, p.y * 0.5) + r() * 20, p.z + (r() - 0.5) * 50], [(r() - 0.5) * 70, 10 + r() * 25, (r() - 0.5) * 70], 9 + r() * 4, 25, 150 + r() * 120, 0.7, 4, 0.5); }
-      ic = impactPts.reduce((a, p) => a.add(p), new THREE.Vector3()).multiplyScalar(1 / impactPts.length);
-      for (let i = 0; i < 700; i++) { const a = r() * 6.28, ts = tI + 0.1 + r() * 0.6, sp = 70 + r() * 70; const x = ic.x + Math.cos(a) * 60, z = ic.z + Math.sin(a) * 60;
-        puff(ts, [x, gY(x, z, ts) + 8 + r() * 20, z], [Math.cos(a) * sp, 2 + r() * 6, Math.sin(a) * sp], 9 + r() * 3, 30, 120 + r() * 90, 0.65, 3, 0.35); }
+    const NT = 24, fr = [];
+    for (let k = 0; k <= NT; k++) { const ts = tB + (tI - tB) * k / NT, st = tower.pose(ts, sc); fr.push({ t: ts, p: st.crushFront.clone(), h: st.rubble.h, r: st.rubble.r, x: st.rubble.x, z: st.rubble.z }); }
+    const frAt = (ts) => fr[Math.min(NT, Math.max(0, Math.round((ts - tB) / (tI - tB) * NT)))];
+    // first crush: compression-side walls burst at the base
+    const h0 = fr[0].p;
+    for (let i = 0; i < 140; i++) puff(tB + r() * 0.6, [h0.x + 20 + (r() - 0.3) * 40, 6 + r() * 25, h0.z + (r() - 0.5) * 60], [(r() - 0.2) * 50, 2 + r() * 8, (r() - 0.5) * 50], 6 + r() * 3, 12, 60 + r() * 40, 0.6, 1.5, 0.7);
+    for (let i = 0; i < 1100 * fxK; i++) {      // ejecta from the crush front: chunks thrown outward over the pile
+      const ts = tB + Math.pow(r(), 0.8) * (tI - tB + 0.3), f = frAt(ts), a = r() * 6.28, rr = 25 + r() * 30;
+      addDeb(ts, [f.x + Math.cos(a) * rr, f.h + 3 + r() * 20, f.z + Math.sin(a) * rr], 60, 14, 1.5 + r() * 4);
     }
+    for (let i = 0; i < 1300; i++) {            // dust: jets at the crush front + a skirt rolling off the growing mound
+      const ts = tB + r() * (tI - tB + 0.8), f = frAt(Math.min(ts, tI)), a = r() * 6.28;
+      if (r() < 0.55) { const rr = 20 + r() * 35; puff(ts, [f.x + Math.cos(a) * rr, f.h + 4 + r() * 30, f.z + Math.sin(a) * rr], [Math.cos(a) * (15 + r() * 30), 4 + r() * 10, Math.sin(a) * (15 + r() * 30)], 7 + r() * 3, 18, 80 + r() * 70, 0.62, 3, 0.5); }
+      else { const rr = f.r * (0.7 + r() * 0.35), x = f.x + Math.cos(a) * rr, z = f.z + Math.sin(a) * rr; puff(ts, [x, gY(x, z, ts) + 5, z], [Math.cos(a) * (25 + r() * 35), 2 + r() * 3, Math.sin(a) * (25 + r() * 35)], 8 + r() * 3, 25, 100 + r() * 60, 0.55, 2, 0.4); }
+    }
+    // crown fracture (separation at U_SEP) and crown landing on the pile
+    const tSep = tB + Q.U_SEP;
+    if (tSep < tI) { const k = tower.pose(tSep, sc).kink.clone();
+      for (let i = 0; i < 120 * fxK + 40; i++) addDeb(tSep + r() * 0.4, [k.x - r() * 40, k.y + (r() - 0.5) * 10, k.z + (r() - 0.5) * 40], 35, 8, 2 + r() * 4);
+      for (let i = 0; i < 90; i++) puff(tSep + r() * 0.5, [k.x - r() * 40, k.y + (r() - 0.5) * 10, k.z + (r() - 0.5) * 40], [(r() - 0.5) * 30, -6 - r() * 10, (r() - 0.5) * 30], 2.5 + r() * 1.5, 10, 40 + r() * 25, 0.5, 0, 0.6); }
+    const impactPts = [];
+    { const st = tower.pose(tI, sc); for (let i = 0; i < tower.segs.length; i++) { const sg = tower.segs[i]; if (sg.s0 >= Q.Y_JOINT - 150 && sg.s0 < Q.Y_JOINT) impactPts.push(st.segWorld[i].p.clone()); }
+      impactPts.push(st.crushFront.clone()); }
+    for (let i = 0; i < 600 * fxK; i++) { const p = impactPts[r() * impactPts.length | 0]; addDeb(tI + r() * 0.5, [p.x + (r() - 0.5) * 40, Math.max(p.y, 5) + r() * 20, p.z + (r() - 0.5) * 40], 70, 30, 2 + r() * 5); }
+    for (let i = 0; i < 700; i++) { const p = impactPts[r() * impactPts.length | 0]; const ts = tI + r() * 0.6;
+      puff(ts, [p.x + (r() - 0.5) * 50, Math.max(4, p.y * 0.6) + r() * 20, p.z + (r() - 0.5) * 50], [(r() - 0.5) * 70, 10 + r() * 25, (r() - 0.5) * 70], 9 + r() * 4, 25, 150 + r() * 120, 0.7, 4, 0.5); }
+    ic = impactPts.reduce((a, p) => a.add(p), new THREE.Vector3()).multiplyScalar(1 / impactPts.length);
+    const fe = fr[NT];       // final radial surge from the mound edge
+    for (let i = 0; i < 800; i++) { const a = r() * 6.28, ts = tI + 0.1 + r() * 0.7, sp = 60 + r() * 80; const x = fe.x + Math.cos(a) * fe.r * 0.8, z = fe.z + Math.sin(a) * fe.r * 0.8;
+      puff(ts, [x, gY(x, z, ts) + 8 + r() * 20, z], [Math.cos(a) * sp, 2 + r() * 6, Math.sin(a) * sp], 9 + r() * 3, 30, 120 + r() * 90, 0.65, 3, 0.35); }
   }
   return { shards, deb, dust, ic };
 }
@@ -157,6 +169,7 @@ export function updateWorld(t, sc = Q.FILM) {
   const wsc = sc === Q.FILM ? null : sc;
   W.groundM.update(t, wsc); W.city.update(t, wsc); W.cars.update(t, wsc); W.pl.update(t, wsc); W.rift.update(t, wsc);
   W.shardB.update(t); W.debB.update(t);
+  if (W.noDust) W.dustM.mesh.visible = false;
   const dz = dustLevel(sc, t);
   W.sky.U.uDust.value = dz * 0.85; W.sky.U.uSunI.value = 1 - dz * 0.5;
   W.scene.fog.color.copy(FOGC).lerp(FOGD, dz); W.scene.fog.density = 0.00009 + dz * 0.00024;
