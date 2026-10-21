@@ -109,6 +109,11 @@ function buildState() {
 let orbit, ui, last = performance.now(), fpsAcc = 0, fpsN = 0;
 function frame(now) {
   const dt = Math.min(0.1, (now - last) / 1000); last = now;
+  if (window.__capture) return;
+  tick(dt);
+  requestAnimationFrame(frame);
+}
+function tick(dt) {
   fpsAcc += dt; fpsN++; if (fpsAcc > 0.5) { app.fps = fpsN / fpsAcc; fpsAcc = 0; fpsN = 0; }
   if (app.running) { app.t += dt * app.speed; if (app.t > app.sc.end) { app.t = app.sc.end; app.running = false; } }
   const st = updateWorld(app.t, app.sc);
@@ -143,7 +148,6 @@ function frame(now) {
   P.blur.uniforms.tSrc.value = rtB2.texture; P.blur.uniforms.uDir.value.set(0, 1.5 / rtB1.height); pass(P.blur, rtB1);
   P.post.uniforms.tScene.value = rtScene.texture; P.post.uniforms.tBloom.value = rtB1.texture; pass(P.post, null);
   ui?.update(buildState());
-  requestAnimationFrame(frame);
 }
 
 async function boot() {
@@ -166,6 +170,7 @@ async function boot() {
   document.body.classList.add('ready');
   if (qs.has('t')) { app.t = +qs.get('t'); }
   if (qs.has('view')) { setView(qs.get('view')); ui?.setView?.(qs.get('view')); }
+  window.bq = { setMagnitude, shake, reset, setView: (v) => { setView(v); ui?.setView?.(v); }, tick, orbit };
   window.ready = true;
   requestAnimationFrame(frame);
 }
