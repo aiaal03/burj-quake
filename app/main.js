@@ -125,6 +125,8 @@ function buildState() {
     add('core', 300, 'Y-shaped buttressed core', false, true);
     add('base', 10, '3.7 m raft · ~194 piles', false, true);
   }
+  // phone: while the Director shows its lower-third caption, drop the 3D callouts (they would overlap it)
+  if (innerWidth < 900 && director?.state?.active) callouts.length = 0;
   return { M: app.M, t, running: app.running, amp: sc.amp(t), seis, loadMax: sc.stressMax(t), loadJoint: jr, loadBase: br,
     stressBins: W_.tower.U.uS.value, lowRiseDown: low, midRiseDown: mid, burjStatus: burjStatus(sc, t), tSpire: sc.tSpire, tBreak: sc.tBreak, tImpact: sc.tImpact,
     view: app.view, callouts, fps: app.fps, end: sc.end };
@@ -182,7 +184,7 @@ async function boot() {
   await Promise.all(fonts.map(async ([f, n, w]) => { try { const ff = new FontFace(f, `url(${new URL(`../assets/fonts/${n}.woff2`, import.meta.url)})`, { weight: w }); await ff.load(); document.fonts.add(ff); } catch (e) { /* system font fallback */ } }));
   await setupWorld(K);
   const phone = innerWidth / innerHeight < 0.8;
-  orbit = makeOrbit(camera, canvas, { target: [0, phone ? 300 : 330, 0], dist: phone ? 2500 : 1750, yaw: -42, pitch: phone ? 14 : 10 });
+  orbit = makeOrbit(camera, canvas, { target: [0, phone ? 300 : 330, 0], dist: phone ? 1850 : 1750, yaw: -42, pitch: phone ? 9 : 10 });
   if (qs.has('cam')) { const [d, yw, pt, ty] = qs.get('cam').split(',').map(Number); Object.assign(orbit.S, { dist: d, yaw: yw, pitch: pt, ty }); orbit.goTo({ dist: d, yaw: yw, pitch: pt, ty }); orbit.setAuto(false); }
   resize(); addEventListener('resize', resize);
   setMagnitude(+(qs.get('m') || 7));
