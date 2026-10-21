@@ -166,6 +166,8 @@
 
 /* ---------- elevation strip ---------- */
 .bq-strip { position: absolute; right: 8px; width: 40px; padding: 8px 0; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.bq-strip { transition: opacity 0.35s ease; }
+.bq-strip.is-off { opacity: 0; pointer-events: none; }
 .bq-strip canvas { width: 40px; flex: 1; min-height: 0; display: block; }
 .bq-strip .bq-label { font-size: 9px; letter-spacing: 0.06em; text-transform: none; }
 

@@ -35,7 +35,7 @@ const CAP = {
   hypo: 'Hypothetical · beyond design',             // SCIENCE caption guidance
   rec: 'Largest recorded: M9.5, Chile 1960',        // SCIENCE caption guidance
 };
-const KICK = { aerial: 'Establishing', street: 'Street level', mid: 'Street level', lake: 'Lake', spire: 'Spire', base: 'Base', side: 'Side view', wide: 'Aftermath', link: 'Core', after: 'Aftermath' };
+const KICK = { orbit: 'Burj Khalifa', aerial: 'Establishing', street: 'Street level', mid: 'Street level', lake: 'Lake', spire: 'Spire', base: 'Base', side: 'Side view', wide: 'Aftermath', link: 'Core', after: 'Aftermath' };
 
 export function makeDirector({ camera, canvas, orbit, app, setView, root }) {
   // ---------- DOM (own file, own classes; matches ui.css look) ----------
@@ -133,60 +133,41 @@ export function makeDirector({ camera, canvas, orbit, app, setView, root }) {
     },
   };
 
+  // One continuous orbit around the tower (no cuts): the tower stays whole in frame, the camera circles it and slowly
+  // rises from the base to the spire; view modes and captions follow the load on the structure.
   function buildPlan(sc) {
-    const M = sc.M, end = sc.end, used = new Set(), P = [];
-    let A = 0; for (let t = 0; t < end; t += 0.1) A = Math.max(A, sc.amp(t));
-    sc._yc = 3 + 1.2 * A;                                         // eye height clears the (dramatised) ground heave
-    const yl = 6 + 0.9 * A;                                        // lake: the water rides the heave × 0.7
-    const street = (t0, t1, band, caps, minH = band === 'low' ? 10 : 40) => {
-      const pk = pickBuilding(sc, band, t0 + 0.5, t1 - 0.5, minH, used) || pickBuilding(sc, band, -1, -1, minH, used);
-      return pk ? S.street(t0, t1, pk, caps, band === 'low' ? 'street' : 'mid') : S.lake(t0, t1, yl, caps);
-    };
-    const fill = (t0, t1, makers) => { const n = Math.max(1, Math.ceil((t1 - t0) / 3.6)), d = (t1 - t0) / n; for (let k = 0; k < n; k++) P.push(makers[k % makers.length](t0 + k * d, t0 + (k + 1) * d)); };
-    const tS = sc.tSpire, tB = sc.tBreak, tI = sc.tImpact;
-    if (isFinite(tB)) {                                            // ≈ M9.6–10: the full sequence
-      const a1 = Math.min(1.6, tS - 2.6);
-      P.push(S.aerial(0, a1, 'xray', [[0, CAP.core]]));
-      const s0 = Math.max(a1 + 1.4, tS - 2.0);
-      P.push(street(a1, s0, 'low', [[a1, CAP.tune]]));
-      P.push(S.spire(s0, tS + 1.1, tS, [[s0, CAP.spireJ], [tS, CAP.spireF]]));
-      const b0 = Math.max(tS + 1.1, tB - 2.6);
-      if (b0 > tS + 1.2) fill(tS + 1.1, b0, [(a, b) => street(a, b, 'mid', [[a, CAP.mid]]), (a, b) => S.link(a, b, [[a, CAP.link]])]);
-      P.push(S.base(b0, tB + 0.9, tB, [[b0, CAP.bend], [tB, CAP.crush]]));
-      P.push(S.side(tB + 0.9, tB + 3.5, [[tB + 0.9, CAP.down]]));
-      P.push(S.lake(tB + 3.5, tI + 0.5, yl, [[tB + 3.5, CAP.hypo]]));
-      fill(tI + 0.5, end, [(a, b) => S.wide(a, b, [[a, CAP.rec]]), (a, b) => S.aerial(a, b, 'normal', [[a, CAP.hypo]]), (a, b) => S.top(a, b, [])]);
-    } else if (isFinite(tS)) {                                     // ≈ M8.8–9.6: spire fails, tower stands
-      const a1 = 1.5, s0 = Math.max(a1 + 1.6, tS - 1.8);
-      P.push(S.aerial(0, a1, 'xray', [[0, CAP.joint]]));
-      P.push(street(a1, s0, 'low', [[a1, CAP.tune]]));             // early: the low-rises just starting to go, before the dust
-      P.push(S.spire(s0, tS + 1.4, tS, [[s0, CAP.spireJ], [tS, CAP.spireF]]));
-      const t2 = tS + 1.4;
-      P.push(S.link(t2, t2 + 3.0, [[t2, CAP.link], [t2 + 1.5, CAP.fuse]]));
-      P.push(S.lake(t2 + 3.0, t2 + 6.0, yl, [[t2 + 3.0, CAP.spireSeis]]));
-      fill(t2 + 6.0, end, [(a, b) => S.wide(a, b, [[a, CAP.hypo]]), (a, b) => S.aerial(a, b, 'normal', [[a, CAP.rec]])]);
-    } else if (M >= 7.85) {                                         // M8: mid-rises + link-beam fuses
-      P.push(S.aerial(0, 2.4, 'xray', [[0, CAP.core]]));
-      P.push(street(2.4, 5.0, 'low', [[2.4, CAP.tune]]));
-      P.push(S.link(5.0, 8.2, [[5.0, CAP.link], [6.6, CAP.fuse]]));
-      P.push(street(8.2, 11.2, 'mid', [[8.2, CAP.mid]]));
-      P.push(S.lake(11.2, 14.4, yl, [[11.2, CAP.burjT]]));
-      fill(14.4, end, [(a, b) => S.aerial(a, b, 'normal', [[a, CAP.wind]]), (a, b) => S.wide(a, b, [[a, CAP.fuse]])]);
-    } else if (M >= 6.5) {                                          // M7: low-rises fail
-      P.push(S.aerial(0, 2.6, 'xray', [[0, CAP.core]]));
-      P.push(street(2.6, 5.6, 'low', [[2.6, CAP.tune]]));
-      P.push(street(5.6, 8.6, 'low', [[5.6, CAP.per]]));
-      P.push(S.base(8.6, 11.6, Infinity, [[8.6, CAP.baseOk]]));
-      P.push(S.lake(11.6, 14.8, yl, [[11.6, CAP.burjT]]));
-      fill(14.8, end, [(a, b) => S.aerial(a, b, 'normal', [[a, CAP.wind]]), (a, b) => S.wide(a, b, [[a, CAP.per]])]);
-    } else {                                                        // M3–6: calm, beautiful tour
-      P.push(S.aerial(0, 3.4, 'xray', [[0, CAP.core]]));
-      P.push(S.spire(3.4, 6.8, Infinity, [[3.4, CAP.joint]]));
-      P.push(street(6.8, 10.2, 'low', [[6.8, M < 4.5 ? CAP.felt : CAP.sway]]));
-      P.push(S.lake(10.2, 13.8, yl, [[10.2, CAP.burjT]]));
-      fill(13.8, end, [(a, b) => S.wide(a, b, [[a, CAP.wind]]), (a, b) => S.aerial(a, b, 'normal', [[a, CAP.burjT]])]);
+    const M = sc.M, end = sc.end, tS = sc.tSpire, tB = sc.tBreak, tI = sc.tImpact;
+    const views = [], caps = [];
+    let last = null;
+    for (let t = 0; t <= end; t += 0.05) {
+      let v;
+      if (t < 2.2) v = 'xray';
+      else if (isFinite(tB) && t >= tB + 0.3) v = 'normal';
+      else if (isFinite(tS) && t >= tS + 0.2 && t < tS + 1.6) v = 'normal';            // watch the spire go
+      else if (M < 6.5) v = t > 5 && t < 9.5 ? 'stress' : 'normal';                      // show how little load there is
+      else v = sc.stressMax(t) >= 0.45 ? 'stress' : 'normal';
+      if (v !== last) { views.push([t, v]); last = v; }
     }
-    return P.filter((s) => s.t1 - s.t0 > 0.3);
+    caps.push([0, CAP.core]);
+    caps.push([2.4, CAP.burjT]);
+    if (M < 6.5) caps.push([5.2, CAP.baseOk], [9.8, CAP.wind]);
+    else if (!isFinite(tS)) { caps.push([5.0, CAP.bend]); if (M >= 7.85) caps.push([8.0, CAP.fuse]); caps.push([11.5, CAP.baseOk]); }
+    else {
+      caps.push([Math.max(2.6, tS - 1.6), CAP.spireJ], [tS, CAP.spireF]);
+      if (isFinite(tB)) caps.push([Math.max(tS + 1.4, tB - 2.0), CAP.bend], [tB, CAP.crush], [tB + 2.2, CAP.down], [tI + 1.0, CAP.rec]);
+      else caps.push([tS + 2.0, CAP.spireSeis], [tS + 6.0, CAP.hypo]);
+    }
+    caps.sort((p, q) => p[0] - q[0]);
+    return [{ type: 'orbit', t0: 0, t1: end, views, caps }];
+  }
+  function orbitPose(t, end) {
+    const u = clamp(t / Math.max(end, 1));
+    const yaw = -70 + 300 * (0.15 * u + 0.85 * sm(u));             // ~5/6 of a circle over the whole shake
+    const pitch = 4 + 14 * sm(u);                                   // from near-ground toward a higher view
+    const dist = 1450 + 150 * Math.sin(u * Math.PI);
+    const ty = 330 + 60 * Math.sin(u * Math.PI * 0.9);
+    const y = yaw * Math.PI / 180, pp = pitch * Math.PI / 180;
+    return { p: [Math.sin(y) * Math.cos(pp) * dist, ty + Math.sin(pp) * dist, Math.cos(y) * Math.cos(pp) * dist], g: [0, ty, 0] };
   }
 
   // ---------- run ----------
@@ -234,8 +215,8 @@ export function makeDirector({ camera, canvas, orbit, app, setView, root }) {
       else {
         let i = 0; for (let k = 0; k < D.plan.length; k++) if (t >= D.plan[k].t0 - 1e-6) i = k;
         const s = D.plan[i]; D.shotI = i;
-        const u = ease(clamp((t - s.t0) / (s.t1 - s.t0)));
-        put(L3(s.p[0], s.p[1], u), L3(s.g[0], s.g[1], u), s.fov);
+        if (s.type === 'orbit') { const o = orbitPose(t, sc.end); put(o.p, o.g, 1); }
+        else { const u = ease(clamp((t - s.t0) / (s.t1 - s.t0))); put(L3(s.p[0], s.p[1], u), L3(s.g[0], s.g[1], u), s.fov); }
         let v = s.views[0][1]; for (const [vt, vv] of s.views) if (t >= vt - 1e-6) v = vv; applyView(v);
         const next = D.plan[i + 1], fadeOut = next && next.caps && next.caps[0] && next.caps[0][1] !== (s.caps?.at(-1)?.[1]) ? 1 - sm((t - (s.t1 - 0.25)) / 0.25) : 1;
         caption(s, t, fadeOut);

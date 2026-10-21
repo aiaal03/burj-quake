@@ -348,6 +348,8 @@ export function createUI(root, handlers = {}, opts = {}) {
       S = { ...S, ...state };
       if (state.M != null && document.activeElement !== range) setM(state.M, false);
       bShake.classList.toggle('is-running', !!S.running); bShake.textContent = S.running ? 'Shaking…' : 'Shake';
+      // the height strip only makes sense as a heat map: show it in the Stress view only
+      strip.classList.toggle('is-off', (S.view ?? view) !== 'stress');
       paintTop(); paintStatus(); paintMeter(); drawSeis(); drawStrip(); renderCard();
     },
     setView(v) { view = v; segView._set(v); renderCard(true); },
