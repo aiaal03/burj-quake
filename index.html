@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Burj Quake</title>
+<meta name="description" content="Interactive 3D simulation: how the world's tallest building responds to earthquakes of different magnitudes. Open source.">
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; height: 100%; background: #1a1612; overflow: hidden; font-family: Inter, system-ui, -apple-system, sans-serif; }
+  #gl { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
+  #ui { position: fixed; inset: 0; pointer-events: none; }
+  #boot { position: fixed; inset: 0; display: grid; place-items: center; color: #e8dccb; font: 500 15px Inter, system-ui, sans-serif; letter-spacing: .12em; transition: opacity .6s; }
+  body.ready #boot { opacity: 0; pointer-events: none; }
+  noscript { position: fixed; inset: 0; display: grid; place-items: center; color: #fff; }
+</style>
+<link rel="stylesheet" href="app/ui/ui.css">
+<script type="importmap">{"imports":{"three":"./src/vendor/three.module.js","three/addons/":"./src/vendor/jsm/"}}</script>
+</head><body>
+<canvas id="gl"></canvas><div id="ui"></div><div id="boot">BUILDING DOWNTOWN DUBAI…</div>
+<noscript>Burj Quake needs JavaScript and WebGL 2.</noscript>
+<script type="module" src="app/main.js"></script>
+</body></html>

@@ -1,0 +1,349 @@
+// Procedural Burj Khalifa: Y-plan (3 wings + hex core), 27 spiral setbacks, pinnacle + spire.
+// Built as a chain of rigid segments so it can sway (small rotations per joint) and break/topple.
+import * as THREE from 'three';
+import { SBINS, DEF_SCALE, G_FILM, SPIRE_PIVOT, FILM } from './quake.js';
+
+export const HT = 828;
+const WING_A = [90, 210, 330].map((d) => d * Math.PI / 180);
+const L0 = 60, L1 = 13, W0 = 36, W1 = 22, RC = 18;
+const SETBACK = Array.from({ length: 27 }, (_, j) => 150 + j * 16.5);
+export const BOUNDS = [...Array.from({ length: 21 }, (_, i) => i * 30), 645, 690, 740, 790, 828];
+// Y_SPIRE: concrete→steel joint. Real: RC to L155/156 (≈585–600 m), steel spire above [A1]. Our concrete wings/core end
+// at 600 m — the segment boundary that IS the material transition — so the spire (600–828, 228 m ≈ real ~244 m
+// unoccupied spire) detaches there. Y_BREAK: top of the base crush zone (overturning failure at the base).
+// Y_KINK / Y_KINK2: in-flight fractures of the falling shaft (falling-chimney effect, ≈1/3 and ≈3/4 height).
+export const Y_SPIRE = 600, Y_BREAK = 30, Y_KINK = 210, Y_KINK2 = 450;
+export const PIVOT_X = 18;                 // overturning pivot: compression side (+x = fall direction), inside the footprint
+export const FALL_DIR = [1, 0, 0];         // tower overturns toward +x (S14 camera should look along ±z)
+
+function wingDims(k, y) {
+  let c = 0; for (let j = 0; j < SETBACK.length; j++) if (j % 3 === k && SETBACK[j] < y - 1e-3) c++;
+  return { L: L0 - c * (L0 - L1) / 9, W: W0 - c * (W0 - W1) / 9, c };
+}
+function wingPoly(k, L, W) {
+  const a = WING_A[k], ca = Math.cos(a), sa = Math.sin(a), pts = [];
+  const push = (u, v) => pts.push([u * ca - v * sa, u * sa + v * ca]);
+  const r = W / 2, cu = Math.max(L - r, 1);
+  push(0, -r); push(cu, -r);
+  for (let i = 1; i < 10; i++) { const f = -Math.PI / 2 + Math.PI * i / 10; push(cu + Math.cos(f) * r, Math.sin(f) * r); }
+  push(cu, r); push(0, r);
+  return pts;
+}
+function hexPoly(r, n = 6, rot = Math.PI / 6) { const p = []; for (let i = 0; i < n; i++) { const a = rot + i * 2 * Math.PI / n; p.push([Math.cos(a) * r, Math.sin(a) * r]); } return p; }
+
+// geometry builder with custom attributes
+class GB {
+  constructor() { this.p = []; this.n = []; this.gy = []; this.s = []; this.f = []; this.k = []; this.idx = []; }
+  v(x, y, z, nx, ny, nz, gy, s, f, k) { this.p.push(x, y, z); this.n.push(nx, ny, nz); this.gy.push(gy); this.s.push(s); this.f.push(f); this.k.push(k); return this.p.length / 3 - 1; }
+  // side walls of a convex polygon prism between global heights a..b (local y = gy - base). closed = last→first edge too
+  prism(poly, a, b, base, f, k, closed = false, ra = 1, rb = 1) {
+    const n = poly.length, cx = poly.reduce((s, p) => s + p[0], 0) / n, cz = poly.reduce((s, p) => s + p[1], 0) / n;
+    const E = closed ? n : n - 1;
+    const en = [];
+    for (let i = 0; i < E; i++) {
+      const p0 = poly[i], p1 = poly[(i + 1) % n]; let nx = p1[1] - p0[1], nz = -(p1[0] - p0[0]); const l = Math.hypot(nx, nz) || 1; nx /= l; nz /= l;
+      if (nx * ((p0[0] + p1[0]) / 2 - cx) + nz * ((p0[1] + p1[1]) / 2 - cz) < 0) { nx = -nx; nz = -nz; }
+      en.push([nx, nz]);
+    }
+    let s = 0;
+    for (let i = 0; i < E; i++) {
+      const p0 = poly[i], p1 = poly[(i + 1) % n], len = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]);
+      const nn = (j, end) => {   // vertex normal: smooth with neighbour if the turn is small
+        const o = en[j], q = en[(j + (end ? 1 : -1) + E) % E];
+        if ((!closed && (end ? j === E - 1 : j === 0)) || o[0] * q[0] + o[1] * q[1] < 0.8) return o;
+        const x = o[0] + q[0], z = o[1] + q[1], l = Math.hypot(x, z); return [x / l, z / l];
+      };
+      const n0 = nn(i, false), n1 = nn(i, true);
+      const i0 = this.v(p0[0] * ra, a - base, p0[1] * ra, n0[0], 0, n0[1], a, s, f, k);
+      const i1 = this.v(p1[0] * ra, a - base, p1[1] * ra, n1[0], 0, n1[1], a, s + len, f, k);
+      const i2 = this.v(p1[0] * rb, b - base, p1[1] * rb, n1[0], 0, n1[1], b, s + len, f, k);
+      const i3 = this.v(p0[0] * rb, b - base, p0[1] * rb, n0[0], 0, n0[1], b, s, f, k);
+      this.idx.push(i0, i1, i2, i0, i2, i3);
+      s += len;
+    }
+  }
+  cap(poly, y, base, f, k, sc = 1) {
+    const n = poly.length, cx = poly.reduce((s, p) => s + p[0], 0) / n * sc, cz = poly.reduce((s, p) => s + p[1], 0) / n * sc;
+    const c = this.v(cx, y - base, cz, 0, 1, 0, y, 0, f, k);
+    const ids = poly.map((p) => this.v(p[0] * sc, y - base, p[1] * sc, 0, 1, 0, y, 0, f, k));
+    for (let i = 0; i < n; i++) {
+      const a = ids[i], b = ids[(i + 1) % n];
+      const ax = poly[i][0] - cx, az = poly[i][1] - cz, bx = poly[(i + 1) % n][0] - cx, bz = poly[(i + 1) % n][1] - cz;
+      if (ax * bz - az * bx < 0) this.idx.push(c, a, b); else this.idx.push(c, b, a);
+    }
+  }
+  geo() {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(this.p, 3));
+    g.setAttribute('normal', new THREE.Float32BufferAttribute(this.n, 3));
+    g.setAttribute('aGY', new THREE.Float32BufferAttribute(this.gy, 1));
+    g.setAttribute('aS', new THREE.Float32BufferAttribute(this.s, 1));
+    g.setAttribute('aF', new THREE.Float32BufferAttribute(this.f, 1));
+    g.setAttribute('aK', new THREE.Float32BufferAttribute(this.k, 1));
+    g.setIndex(this.idx); g.computeBoundingSphere(); return g;
+  }
+}
+
+function buildSegment(s0, s1) {
+  const g = new GB();
+  if (s0 < 600) {
+    const cuts = [s0, ...SETBACK.filter((y) => y > s0 && y < s1), s1];
+    for (let c = 0; c < cuts.length - 1; c++) {
+      const a = cuts[c], b = cuts[c + 1], ym = (a + b) / 2;
+      for (let k = 0; k < 3; k++) {
+        const { L, W } = wingDims(k, ym);
+        const poly = wingPoly(k, L, W);
+        g.prism(poly, a, b, s0, k + 1, 0, false);
+        const jb = SETBACK.findIndex((y) => Math.abs(y - b) < 1e-3);
+        if ((jb >= 0 && jb % 3 === k) || Math.abs(b - 600) < 1e-3) g.cap(poly, b, s0, k + 1, 2);
+      }
+      g.prism(hexPoly(RC), a, b, s0, 4, 0, true);
+      if (Math.abs(b - 600) < 1e-3) g.cap(hexPoly(RC), b, s0, 4, 2);
+    }
+  } else {
+    // pinnacle (glass, 600–690) and spire (metal, 690–828) — tapered 20-gons, split into bands so taper reads smooth
+    const rAt = (y) => y <= 690 ? 11 - (y - 600) / 90 * 4.5 : 5.2 - (y - 690) / 138 * 4.4;
+    const N = 20, circ = hexPoly(1, N, 0);
+    const steps = Math.ceil((s1 - s0) / 5);
+    for (let i = 0; i < steps; i++) {
+      const a = s0 + (s1 - s0) * i / steps, b = s0 + (s1 - s0) * (i + 1) / steps;
+      const ra = rAt(a), rb = rAt(b);
+      g.prism(circ, a, b, s0, 5, s0 >= 690 ? 1 : 0, true, ra, rb);
+    }
+    if (s1 >= 828) g.cap(circ, 828, s0, 5, 1, rAt(828));
+    // rings on the pinnacle/spire base
+    if (s0 === 600) { g.prism(circ, 600, 603, s0, 6, 1, true, 13, 13); g.cap(circ, 603, s0, 6, 1, 13); }
+  }
+  return g.geo();
+}
+
+const HASH = /* glsl */`
+float h13(vec3 p3){ p3 = fract(p3 * 0.1031); p3 += dot(p3, p3.zyx + 31.32); return fract((p3.x + p3.y) * p3.z); }`;
+
+export function towerMaterial(U) {
+  const m = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.12, metalness: 0.85, envMapIntensity: 1.0 });
+  m.onBeforeCompile = (sh) => {
+    Object.assign(sh.uniforms, U);
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', `#include <common>
+attribute float aGY; attribute float aS; attribute float aF; attribute float aK; varying float vGY; varying float vS; varying float vF; varying float vK; varying vec2 vXZ;`)
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+vGY = aGY; vS = aS; vF = aF; vK = aK; vXZ = position.xz;`);
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
+uniform float uDmg; uniform float uXray; uniform float uStress; uniform float uS[48]; uniform float uL[48]; uniform vec2 uBend; varying float vGY; varying float vS; varying float vF; varying float vK; varying vec2 vXZ; ${HASH}
+// x = demand/capacity. Red ONLY at >= 1.0 (LIMIT); below that the ramp tops out at amber.
+vec3 heat(float x){ x = clamp(x, 0.0, 1.25);
+  vec3 c = mix(vec3(0.05,0.15,0.9), vec3(0.0,0.8,1.0), smoothstep(0.0,0.3,x)); c = mix(c, vec3(0.2,1.0,0.45), smoothstep(0.3,0.55,x));
+  c = mix(c, vec3(1.0,0.95,0.1), smoothstep(0.55,0.78,x)); c = mix(c, vec3(1.0,0.55,0.05), smoothstep(0.78,0.97,x));
+  if (x >= 1.0) c = mix(vec3(1.0,0.12,0.04), vec3(1.0,0.9,0.85), smoothstep(1.0,1.25,x)); return pow(c, vec3(2.2)); }   // palette authored in sRGB; emissive is linear`)
+      .replace('#include <color_fragment>', `#include <color_fragment>
+float mMetal = 0.85, mRough = 0.12; vec3 mEmis = vec3(0.0);
+{
+  float fl = vGY / 3.75, ff = fract(fl), ms = vS / 1.55, mf = fract(ms);
+  float fwS = fwidth(ms), fwF = fwidth(fl);
+  float aaS = clamp(1.6 - fwS * 2.0, 0.0, 1.0), aaF = clamp(1.6 - fwF * 2.0, 0.0, 1.0);
+  float fin = (1.0 - smoothstep(0.05, 0.16 + fwS, abs(mf - 0.5) * -2.0 + 1.0)) ;
+  fin = mix(0.18, fin, aaS);
+  float span = smoothstep(0.80 - fwF, 0.82 + fwF, ff) * (1.0 - smoothstep(0.97 - fwF, 1.0, ff));
+  span = mix(0.17, span, aaF);
+  vec3 cell = vec3(floor(fl), floor(ms), vF);
+  float h1 = h13(cell), h2 = h13(cell + 17.3), h3 = h13(vec3(floor(fl / 5.0), floor(ms / 4.0), vF + 9.0));
+  vec3 col;
+  if (vK < 0.5) {
+    vec3 glass = vec3(0.30, 0.345, 0.40) * (0.9 + 0.2 * h2);
+    float gr = 0.07 + 0.06 * h1;
+    float broken = step(h1, uDmg * (0.35 + 1.3 * h3)) * (1.0 - fin);
+    vec3 finC = vec3(0.80, 0.81, 0.83), spC = vec3(0.42, 0.45, 0.50);
+    col = mix(glass, spC, span); mRough = mix(gr, 0.35, span); mMetal = mix(0.88, 0.7, span);
+    col = mix(col, finC, fin); mRough = mix(mRough, 0.28, fin); mMetal = mix(mMetal, 1.0, fin);
+    if (h2 < 0.035 && span < 0.5) mEmis = vec3(1.0, 0.72, 0.42) * 0.25;
+    if (broken > 0.5 && span < 0.5) { col = vec3(0.05, 0.045, 0.04); mRough = 0.95; mMetal = 0.0; mEmis = vec3(0.08, 0.05, 0.03) * h2; }
+  } else if (vK < 1.5) {
+    float band = smoothstep(0.85, 0.9, fract(vGY / 6.0));
+    col = mix(vec3(0.78, 0.79, 0.81), vec3(0.45, 0.47, 0.5), band); mRough = 0.3; mMetal = 1.0;
+  } else {
+    col = vec3(0.62, 0.6, 0.57); mRough = 0.8; mMetal = 0.1;
+  }
+  if (uStress > 0.0) {
+    float fi = clamp(vGY / 828.0, 0.0, 1.0) * 47.0; int i0 = int(floor(fi)); int i1 = min(i0 + 1, 47);
+    float sv = mix(uS[i0], uS[i1], fract(fi)), lv = mix(uL[i0], uL[i1], fract(fi));
+    // flanges: compression side (facing the bend) carries the full D/C, tension flange 0.85, webs 0.7, alternates with sway
+    float dd = dot(normalize(vXZ + vec2(1e-3)), uBend);
+    float side = 0.7 + 0.3 * max(dd, 0.0) + 0.15 * max(-dd, 0.0);
+    float hv = sv * side;
+    // link (coupling) beams = the floor bands: show their own D/C (fuses) on the spandrel stripes
+    hv = mix(hv, max(hv, lv), span * step(vK, 0.5));
+    float iso = 1.0 - smoothstep(0.0, 0.09, abs(fract(hv * 8.0) - 0.5) * 2.0 - 0.82);
+    vec3 hc = heat(hv) * (0.75 + 0.25 * iso);
+    float mesh = max(1.0 - smoothstep(0.0, 0.06, min(ff, 1.0 - ff) * 2.0), 0.0) * 0.25;
+    col = mix(col, vec3(0.02), uStress); mMetal = mix(mMetal, 0.0, uStress); mRough = mix(mRough, 0.9, uStress);
+    mEmis = mix(mEmis, hc * (0.85 - mesh * 0.85), uStress);   // kept below tone-map clipping so hue reads
+  }
+  if (uXray > 0.0) {
+    // X-ray: reinforced concrete (ivory) up to level 156 (~600 m), structural steel (cool graphite-blue) above; floor plates + amber L156 band
+    float steel = step(600.0, vGY);
+    float fpl = 1.0 - smoothstep(0.0, 0.08 + fwidth(vGY / 3.75), abs(fract(vGY / 3.75) - 0.5) * -2.0 + 1.0);
+    float brace = steel * (1.0 - smoothstep(0.0, 0.12, abs(fract((vGY + vS * 1.3) / 9.0) - 0.5) * -2.0 + 1.0));
+    float l156 = 1.0 - smoothstep(1.5, 3.5, abs(vGY - 600.0));
+    vec3 xc = mix(vec3(0.62, 0.56, 0.46), vec3(0.22, 0.30, 0.42), steel);
+    xc += vec3(0.35, 0.30, 0.22) * fpl * (1.0 - steel) + vec3(0.25, 0.38, 0.55) * brace;
+    xc = mix(xc, vec3(1.0, 0.62, 0.18) * 1.4, l156);
+    col = mix(col, vec3(0.02), uXray); mMetal = mix(mMetal, 0.0, uXray); mRough = mix(mRough, 0.9, uXray);
+    mEmis = mix(mEmis, xc * 0.55, uXray);
+  }
+  diffuseColor.rgb = col;
+}`)
+      .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mRough;')
+      .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\nmetalnessFactor = mMetal;')
+      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += mEmis;');
+  };
+  m.customProgramCacheKey = () => 'burj2';
+  return m;
+}
+
+// makeTower(scenario?) — default FILM (the 38 s timeline). For the app: makeTower(makeScenario(M)) or tower.setScenario(sc);
+// pose(t, sc?) also accepts a scenario per call. t is the scenario's own time (film time for FILM).
+export function makeTower(scenario = FILM) {
+  let SC = scenario;
+  const U = { uDmg: { value: 0 }, uXray: { value: 0 }, uStress: { value: 0 }, uS: { value: new Float32Array(SBINS) }, uL: { value: new Float32Array(SBINS) }, uBend: { value: new THREE.Vector2(1, 0) } };
+  const mat = towerMaterial(U);
+  const root = new THREE.Group(); root.name = 'burj';
+  const segs = [];
+  for (let i = 0; i < BOUNDS.length - 1; i++) {
+    const s0 = BOUNDS[i], s1 = BOUNDS[i + 1];
+    const mesh = new THREE.Mesh(buildSegment(s0, s1), mat); mesh.castShadow = true; mesh.receiveShadow = true;
+    const g = new THREE.Group(); g.add(mesh); root.add(g);
+    segs.push({ s0, s1, g, mesh });
+  }
+  // podium ring (low base around the tower)
+  const pod = new THREE.Mesh(new THREE.CylinderGeometry(95, 100, 9, 48), new THREE.MeshStandardMaterial({ color: '#b9b2a6', roughness: 0.8 }));
+  pod.position.y = 3.5; pod.castShadow = pod.receiveShadow = true;
+  const podG = new THREE.Group(); podG.add(pod); root.add(podG);
+  const Q = new THREE.Quaternion(), Q2 = new THREE.Quaternion(), QR = new THREE.Quaternion(), V = new THREE.Vector3(), P = new THREE.Vector3(), C = new THREE.Vector3();
+  const AZ = new THREE.Vector3(0, 0, 1), XA = new THREE.Vector3(1, 0, 0), YA = new THREE.Vector3(0, 1, 0);
+  const G = {};
+  const N = segs.length, iSp = segs.findIndex((sg) => sg.s0 >= Y_SPIRE);
+  const hash = (i, k) => { const x = Math.sin(i * 127.1 + k * 311.7) * 43758.5453; return x - Math.floor(x); };
+  const state = { hinge: new THREE.Vector3(), top: new THREE.Vector3(), spireHinge: new THREE.Vector3(), kink: new THREE.Vector3(), kink2: new THREE.Vector3(),
+    spireCM: new THREE.Vector3(), spireLand: null, segWorld: segs.map(() => ({ p: new THREE.Vector3(), q: new THREE.Quaternion() })) };
+  const cp = segs.map(() => new THREE.Vector3()), cq = segs.map(() => new THREE.Quaternion());
+  // standing chain (tower frame, origin = ground point under the axis): sway × DEF_SCALE, faded by fs; seg 0 height × cs
+  function chain(t, s, fs, cs) {
+    P.set(0, 0, 0);
+    for (let i = 0; i < N; i++) {
+      const sg = segs[i], h = (sg.s1 - sg.s0) * (i === 0 ? cs : 1), ym = (sg.s0 + sg.s1) / 2;
+      const sl = SC.swaySlope(Math.min(ym, Y_SPIRE), s), k = DEF_SCALE * fs;
+      let ax = sl.x * k, az = sl.z * k;
+      if (sg.s0 >= Y_SPIRE) ax += s.whip * DEF_SCALE * fs * (1 + 0.6 * (ym - Y_SPIRE) / 228);   // spire whip (higher mode)
+      Q.setFromAxisAngle(AZ, -ax); Q2.setFromAxisAngle(XA, az); Q.multiply(Q2);
+      Q2.setFromAxisAngle(YA, s.tor * DEF_SCALE * fs * Math.min(1, ym / Y_SPIRE)); Q.multiply(Q2);
+      cp[i].copy(P); cq[i].copy(Q);
+      V.set(0, h, 0).applyQuaternion(Q); P.add(V);
+    }
+    return P;   // tip
+  }
+  // spire while hinged at the joint (SC.tSpire..+SPIRE_PIVOT): rotates toward −x about the joint's −x edge
+  // (at SC.tSpire the shaft is near its −x extreme, so the inertial load on the spire points −x)
+  const spP = segs.map(() => new THREE.Vector3()), spQ = segs.map(() => new THREE.Quaternion());
+  function spireHinged(t) {
+    const s = SC.sway(t); chain(t, s, 1, 1);
+    SC.ground(0, 0, t, G);
+    const J = C.copy(cp[iSp]).add(V.set(-7, 0, 0).applyQuaternion(cq[iSp])).add(new THREE.Vector3(G.hx, G.y, G.hz));
+    QR.setFromAxisAngle(AZ, SC.spireAngle(t));
+    for (let i = iSp; i < N; i++) {
+      spP[i].copy(cp[i]).add(V.set(G.hx, G.y, G.hz)).sub(J).applyQuaternion(QR).add(J);
+      spQ[i].copy(QR).multiply(cq[i]);
+    }
+    return J;
+  }
+  // release state (cached): CM position/velocity, segment offsets about CM
+  let REL = null;
+  function release() {
+    if (REL) return REL;
+    const tr = SC.tSpire + SPIRE_PIVOT, dt = 1e-3, cmAt = (t) => { spireHinged(t); return spP[iSp].clone().add(V.set(0, 80, 0).applyQuaternion(spQ[iSp])); };
+    const c0 = cmAt(tr - dt), c1 = cmAt(tr);
+    REL = { tr, cm: c1, v: c1.clone().sub(c0).multiplyScalar(1 / dt), w: SC.spireOmega(), off: [], q: [] };
+    for (let i = iSp; i < N; i++) { REL.off[i] = spP[i].clone().sub(c1); REL.q[i] = spQ[i].clone(); }
+    // landing: first time the lowest end touches the ground (y ≈ 3)
+    const tmp = new THREE.Vector3();
+    for (let u = 0; u < 6; u += 0.005) {
+      const cmy = c1.y + REL.v.y * u - 0.5 * G_FILM * u * u; QR.setFromAxisAngle(AZ, REL.w * u);
+      tmp.copy(REL.off[iSp]).applyQuaternion(QR); const yb = cmy + tmp.y;
+      tmp.copy(REL.off[N - 1]).add(V.set(0, segs[N - 1].s1 - segs[N - 1].s0, 0).applyQuaternion(REL.q[N - 1])).applyQuaternion(QR); const yt = cmy + tmp.y;
+      if (Math.min(yb, yt) < 3) { REL.tl = tr + u; REL.pl = new THREE.Vector3(c1.x + REL.v.x * u, 0, c1.z + REL.v.z * u); break; }
+    }
+    if (REL.tl === undefined) { REL.tl = tr + 6; REL.pl = c1.clone().setY(0); }
+    state.spireLand = { t: REL.tl, p: REL.pl };
+    return REL;
+  }
+  // pose the whole tower for time t. returns state (world positions of key points)
+  function setScenario(sc) { SC = sc || FILM; REL = null; state.spireLand = null; }
+  function pose(t, sc) {
+    if (sc && sc !== SC) setScenario(sc);
+    SC.ground(0, 0, t, G);
+    podG.position.set(G.hx, G.y, G.hz);
+    const s = SC.sway(t), sa = SC.spireAngle(t), br = SC.breakState(t);
+    U.uDmg.value = SC.damage(t); SC.stressProfile(t, U.uS.value, U.uL.value);
+    if (t > SC.tBreak) U.uBend.value.set(1, 0);
+    else { const bx = s.x || 1e-6, bz = s.z || 0, l = Math.hypot(bx, bz); U.uBend.value.set(bx / l, bz / l); }
+    const fs = 1 - (t > SC.tBreak ? Math.min(1, (t - SC.tBreak) / 1.0) ** 2 * (3 - 2 * Math.min(1, (t - SC.tBreak) / 1.0)) : 0);
+    const cs = 1 - 0.45 * br.crush;
+    chain(t, s, fs, cs);
+    const GO = new THREE.Vector3(G.hx, G.y, G.hz);
+    // pivots (tower frame): base pivot at top of crush zone, compression (+x) side; kink hinges on the back (−x) face
+    const Cb = cp[1].clone().add(V.set(PIVOT_X, 0, 0));
+    const iK1 = segs.findIndex((sg) => sg.s0 >= Y_KINK), iK2 = segs.findIndex((sg) => sg.s0 >= Y_KINK2);
+    const qTh = new THREE.Quaternion().setFromAxisAngle(AZ, -br.th), qL1 = new THREE.Quaternion().setFromAxisAngle(AZ, br.th - br.th1), qL2 = new THREE.Quaternion().setFromAxisAngle(AZ, br.th1 - br.th2);
+    const K1 = cp[iK1].clone().add(V.set(-24, 0, 0).applyQuaternion(cq[iK1])).sub(Cb).applyQuaternion(qTh).add(Cb);
+    const K2 = cp[iK2].clone().add(V.set(-20, 0, 0).applyQuaternion(cq[iK2])).sub(Cb).applyQuaternion(qTh).add(Cb).sub(K1).applyQuaternion(qL1).add(K1);
+    const qRaft = new THREE.Quaternion().setFromAxisAngle(AZ, -br.raft);
+    const toWorld = (p) => p.applyQuaternion(qRaft).add(GO);   // raft tilts about the axis foot
+    for (let i = 0; i < N; i++) {
+      const sg = segs[i], wp = state.segWorld[i];
+      P.copy(cp[i]); Q.copy(cq[i]);
+      if (i >= 1) {
+        P.sub(Cb).applyQuaternion(qTh).add(Cb); Q.premultiply(qTh);
+        if (i >= iK1) { P.sub(K1).applyQuaternion(qL1).add(K1); Q.premultiply(qL1); }
+        if (i >= iK2) { P.sub(K2).applyQuaternion(qL2).add(K2); Q.premultiply(qL2); }
+        if (br.imp > 0) {   // impact break-up: pieces settle/skew independently
+          QR.setFromAxisAngle(XA, br.imp * 0.07 * (hash(i, 1) - 0.5)); Q.premultiply(QR);
+          QR.setFromAxisAngle(YA, br.imp * 0.05 * (hash(i, 2) - 0.5)); Q.premultiply(QR);
+          P.y -= br.imp * (4 + 10 * hash(i, 3)); P.z += br.imp * 8 * (hash(i, 4) - 0.5);
+        }
+      }
+      P.applyQuaternion(qRaft).add(GO); Q.premultiply(qRaft);
+      let vis = true;
+      if (i >= iSp && t >= SC.tSpire) {
+        if (t < SC.tSpire + SPIRE_PIVOT) { spireHinged(t); P.copy(spP[i]); Q.copy(spQ[i]); SC.ground(0, 0, t, G); }
+        else {
+          const R = release(), u = t - R.tr;
+          QR.setFromAxisAngle(AZ, R.w * u);
+          P.set(R.cm.x + R.v.x * u, R.cm.y + R.v.y * u - 0.5 * G_FILM * u * u, R.cm.z + R.v.z * u).add(V.copy(R.off[i]).applyQuaternion(QR));
+          Q.copy(QR).multiply(R.q[i]);
+          if (t >= R.tl) vis = false;
+        }
+      }
+      sg.g.visible = vis;
+      sg.g.position.copy(P); sg.g.quaternion.copy(Q);
+      sg.g.scale.set(1, i === 0 ? cs : 1, 1);
+      wp.p.copy(P); wp.q.copy(Q);
+    }
+    // key points
+    state.hinge.copy(Cb).applyQuaternion(qRaft).add(GO);                     // base pivot (dust / debris emitter)
+    state.kink.copy(K1).applyQuaternion(qRaft).add(GO); state.kink2.copy(K2).applyQuaternion(qRaft).add(GO);
+    { const j = iSp - 1, w = state.segWorld[j]; state.spireHinge.copy(V.set(0, segs[j].s1 - segs[j].s0, 0).applyQuaternion(w.q).add(w.p)); }
+    { const j = t >= SC.tSpire ? iSp - 1 : N - 1, w = state.segWorld[j]; state.top.copy(V.set(0, segs[j].s1 - segs[j].s0, 0).applyQuaternion(w.q).add(w.p)); }
+    { const w = state.segWorld[iSp]; state.spireCM.copy(V.set(0, 80, 0).applyQuaternion(w.q).add(w.p)); }
+    if (!state.spireLand && isFinite(SC.tSpire)) release();
+    state.sway = s; state.br = br; state.sa = sa;
+    return state;
+  }
+  // a point on the facade (for glass shards): returns local-in-segment position + outward normal (tower frame, unswayed)
+  function facadePoint(y, r1, r2) {
+    if (y >= 600) { const a = r1 * 2 * Math.PI, rr = 10; return { p: [Math.cos(a) * rr, y, Math.sin(a) * rr], n: [Math.cos(a), 0, Math.sin(a)] }; }
+    const k = Math.floor(r1 * 3) % 3, { L, W } = wingDims(k, y), a = WING_A[k], ca = Math.cos(a), sa = Math.sin(a);
+    const u = RC * 0.9 + r2 * (L - W / 2 - RC * 0.9), side = (r1 * 3 % 1) < 0.5 ? -1 : 1, v = side * W / 2;
+    return { p: [u * ca - v * sa, y, u * sa + v * ca], n: [-side * sa, 0, side * ca] };
+  }
+  function segIndex(y) { for (let i = 0; i < segs.length; i++) if (y < segs[i].s1) return i; return segs.length - 1; }
+  return { root, segs, pose, setScenario, get scenario() { return SC; }, state, U, facadePoint, segIndex, mat };
+}
