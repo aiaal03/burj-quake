@@ -2,6 +2,10 @@
 
 **An interactive 3D simulation of how the world's tallest building responds to earthquakes from M3 to M10.**
 
+![Burj Quake screencast: X-ray anatomy, M7 low-rises failing, M10 stress view, spire failure and vertical collapse](docs/media/screencast.gif)
+
+<sub>26 s screencast recorded in the app ([MP4](docs/media/screencast.mp4)). X-ray anatomy, then M7 (low-rises fail first), then M10 in the stress view: the spire joint hits the limit, then the base, and the tower crushes down into its own rubble.</sub>
+
 Pick a magnitude and press **Shake**. You can then orbit around Downtown Dubai and switch between three views:
 
 - **Normal:** the city and the tower at golden hour.
@@ -26,7 +30,7 @@ All facts and sources: [`docs/SCIENCE.md`](docs/SCIENCE.md). The model, its thre
 
 **Visual liberties, all labelled in the app:**
 - Sway is drawn ×3 for the tower and exaggerated for the city, because real displacements are invisible at this scale.
-- Collapses play 4× faster than real time.
+- Collapses play 4× faster than real time. A tower this tall would not tip over intact; the model follows engineering evidence: a few degrees of lean, then a vertical crush-down into a rubble pile, with the crown toppling onto it (see `docs/ENGINEERING.md` §9).
 - Ground waves are dramatised.
 
 ## Run it locally
