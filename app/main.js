@@ -152,6 +152,7 @@ async function boot() {
   await setupWorld(K);
   const phone = innerWidth / innerHeight < 0.8;
   orbit = makeOrbit(camera, canvas, { target: [0, phone ? 300 : 330, 0], dist: phone ? 2500 : 1750, yaw: -42, pitch: phone ? 14 : 10 });
+  if (qs.has('cam')) { const [d, yw, pt, ty] = qs.get('cam').split(',').map(Number); Object.assign(orbit.S, { dist: d, yaw: yw, pitch: pt, ty }); orbit.goTo({ dist: d, yaw: yw, pitch: pt, ty }); orbit.setAuto(false); }
   resize(); addEventListener('resize', resize);
   setMagnitude(+(qs.get('m') || 7));
   try {
@@ -161,6 +162,7 @@ async function boot() {
       initial: { M: app.M, view: app.view, speed: app.speed },
     });
   } catch (e) { console.error('UI', e); }
+  if (qs.get('ui') === '0') document.getElementById('ui').style.display = 'none';
   document.body.classList.add('ready');
   if (qs.has('t')) { app.t = +qs.get('t'); }
   if (qs.has('view')) { setView(qs.get('view')); ui?.setView?.(qs.get('view')); }

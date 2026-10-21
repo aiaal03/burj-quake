@@ -1,4 +1,4 @@
-// Procedural Burj Khalifa: Y-plan (3 wings + hex core), 27 spiral setbacks, pinnacle + spire.
+// Procedural Burj Khalifa: Y-plan (3 wings + hex core), 24 spiral setbacks, pinnacle + spire.
 // Built as a chain of rigid segments so it can sway (small rotations per joint) and break/topple.
 import * as THREE from 'three';
 import { SBINS, DEF_SCALE, G_FILM, SPIRE_PIVOT, FILM } from './quake.js';
@@ -6,7 +6,7 @@ import { SBINS, DEF_SCALE, G_FILM, SPIRE_PIVOT, FILM } from './quake.js';
 export const HT = 828;
 const WING_A = [90, 210, 330].map((d) => d * Math.PI / 180);
 const L0 = 60, L1 = 13, W0 = 36, W1 = 22, RC = 18;
-const SETBACK = Array.from({ length: 27 }, (_, j) => 150 + j * 16.5);
+const SETBACK = Array.from({ length: 24 }, (_, j) => 140 + j * 18.5);   // 'two dozen' spiral setbacks (Baker)
 export const BOUNDS = [...Array.from({ length: 21 }, (_, i) => i * 30), 645, 690, 740, 790, 828];
 // Y_SPIRE: concrete→steel joint. Real: RC to L155/156 (≈585–600 m), steel spire above [A1]. Our concrete wings/core end
 // at 600 m — the segment boundary that IS the material transition — so the spire (600–828, 228 m ≈ real ~244 m
@@ -18,16 +18,34 @@ export const FALL_DIR = [1, 0, 0];         // tower overturns toward +x (S14 cam
 
 function wingDims(k, y) {
   let c = 0; for (let j = 0; j < SETBACK.length; j++) if (j % 3 === k && SETBACK[j] < y - 1e-3) c++;
-  return { L: L0 - c * (L0 - L1) / 9, W: W0 - c * (W0 - W1) / 9, c };
+  const n = SETBACK.length / 3;
+  return { L: L0 - c * (L0 - L1) / n, W: W0 - c * (W0 - W1) / n, c };
 }
-function wingPoly(k, L, W) {
-  const a = WING_A[k], ca = Math.cos(a), sa = Math.sin(a), pts = [];
-  const push = (u, v) => pts.push([u * ca - v * sa, u * sa + v * ca]);
-  const r = W / 2, cu = Math.max(L - r, 1);
-  push(0, -r); push(cu, -r);
-  for (let i = 1; i < 10; i++) { const f = -Math.PI / 2 + Math.PI * i / 10; push(cu + Math.cos(f) * r, Math.sin(f) * r); }
-  push(cu, r); push(0, r);
-  return pts;
+// Star-shaped plan outline: union of the hexagonal core and three rounded wings ("Hymenocallis" Y-plan). Sampled as
+// r(θ) at fixed angles, so every tier shares the same angular grid: walls stay continuous and setback terraces are
+// clean rings between two outlines (no overlapping slabs).
+const NA = 216, ANG = Array.from({ length: NA }, (_, i) => i / NA * Math.PI * 2);
+function insideWing(x, z, k, L, W) {
+  const a = WING_A[k], ca = Math.cos(a), sa = Math.sin(a);
+  const u = x * ca + z * sa, v = -x * sa + z * ca, r = W / 2, cu = Math.max(L - r, 0.5);
+  const uu = Math.min(Math.max(u, 0), cu);
+  // slightly waisted sides: the wing narrows a little at mid-length (petal look)
+  const waist = 1 - 0.07 * Math.sin(Math.PI * Math.min(Math.max(u / cu, 0), 1));
+  return Math.hypot(u - uu, v / waist) <= r;
+}
+const outlineCache = new Map();
+function outline(y) {
+  const d = [0, 1, 2].map((k) => wingDims(k, y)), key = d.map((o) => o.c).join(',');
+  if (outlineCache.has(key)) return outlineCache.get(key);
+  const pts = ANG.map((t) => {
+    const cx = Math.cos(t), cz = Math.sin(t);
+    let lo = 0, hi = 90;
+    const ins = (r) => { if (r <= RC * 0.93) return true; const x = cx * r, z = cz * r;
+      for (let k = 0; k < 3; k++) if (insideWing(x, z, k, d[k].L, d[k].W)) return true; return false; };
+    for (let i = 0; i < 30; i++) { const m = (lo + hi) / 2; if (ins(m)) lo = m; else hi = m; }
+    return [cx * lo, cz * lo];
+  });
+  outlineCache.set(key, pts); return pts;
 }
 function hexPoly(r, n = 6, rot = Math.PI / 6) { const p = []; for (let i = 0; i < n; i++) { const a = rot + i * 2 * Math.PI / n; p.push([Math.cos(a) * r, Math.sin(a) * r]); } return p; }
 
@@ -72,6 +90,18 @@ class GB {
       if (ax * bz - az * bx < 0) this.idx.push(c, a, b); else this.idx.push(c, b, a);
     }
   }
+  ring(outer, inner, y, base, f, k) {   // terrace between two star outlines sharing angles (outer below, inner above)
+    const n = outer.length;
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n, o0 = outer[i], o1 = outer[j], i0 = inner[i], i1 = inner[j];
+      if (Math.hypot(o0[0], o0[1]) - Math.hypot(i0[0], i0[1]) < 0.05 && Math.hypot(o1[0], o1[1]) - Math.hypot(i1[0], i1[1]) < 0.05) continue;
+      const a = this.v(o0[0], y - base, o0[1], 0, 1, 0, y, Math.hypot(o0[0], o0[1]), f, k), b = this.v(o1[0], y - base, o1[1], 0, 1, 0, y, Math.hypot(o1[0], o1[1]), f, k);
+      const c = this.v(i1[0], y - base, i1[1], 0, 1, 0, y, Math.hypot(i1[0], i1[1]), f, k), d = this.v(i0[0], y - base, i0[1], 0, 1, 0, y, Math.hypot(i0[0], i0[1]), f, k);
+      // keep the face pointing up (+y): (c - a) × (b - a) must have +y
+      const ux = i1[0] - o0[0], uz = i1[1] - o0[1], wx = o1[0] - o0[0], wz = o1[1] - o0[1];
+      if (uz * wx - ux * wz > 0) this.idx.push(a, c, b, a, d, c); else this.idx.push(a, b, c, a, c, d);
+    }
+  }
   geo() {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(this.p, 3));
@@ -89,30 +119,42 @@ function buildSegment(s0, s1) {
   if (s0 < 600) {
     const cuts = [s0, ...SETBACK.filter((y) => y > s0 && y < s1), s1];
     for (let c = 0; c < cuts.length - 1; c++) {
-      const a = cuts[c], b = cuts[c + 1], ym = (a + b) / 2;
-      for (let k = 0; k < 3; k++) {
-        const { L, W } = wingDims(k, ym);
-        const poly = wingPoly(k, L, W);
-        g.prism(poly, a, b, s0, k + 1, 0, false);
-        const jb = SETBACK.findIndex((y) => Math.abs(y - b) < 1e-3);
-        if ((jb >= 0 && jb % 3 === k) || Math.abs(b - 600) < 1e-3) g.cap(poly, b, s0, k + 1, 2);
-      }
-      g.prism(hexPoly(RC), a, b, s0, 4, 0, true);
-      if (Math.abs(b - 600) < 1e-3) g.cap(hexPoly(RC), b, s0, 4, 2);
+      const a = cuts[c], b = cuts[c + 1], ol = outline((a + b) / 2);
+      g.prism(ol, a, b, s0, 1, 0, true);
+      if (c < cuts.length - 2) g.ring(ol, outline((b + cuts[c + 2]) / 2), b, s0, 1, 2);
+      if (Math.abs(b - 600) < 1e-3) g.cap(ol, b, s0, 1, 2);
     }
+    // a terrace that falls exactly on the segment's top boundary (setback == boundary)
+    const jb = SETBACK.findIndex((y) => Math.abs(y - s1) < 1e-3);
+    if (jb >= 0) g.ring(outline(s1 - 0.5), outline(s1 + 0.5), s1, s0, 1, 2);
   } else {
-    // pinnacle (glass, 600–690) and spire (metal, 690–828) — tapered 20-gons, split into bands so taper reads smooth
-    const rAt = (y) => y <= 690 ? 11 - (y - 600) / 90 * 4.5 : 5.2 - (y - 690) / 138 * 4.4;
-    const N = 20, circ = hexPoly(1, N, 0);
+    // pinnacle (glass crown, 600–690) and braced steel spire (690–828): tapered 24-gons + three tapering fins
+    const rAt = (y) => y <= 690 ? 9.5 - (y - 600) / 90 * 4.6 : 4.6 - (y - 690) / 138 * 4.0;
+    const finW = (y) => Math.max(0, 6.5 * Math.pow(Math.max(0, 1 - (y - 600) / 150), 1.3));
+    const N = 24, circ = hexPoly(1, N, 0);
     const steps = Math.ceil((s1 - s0) / 5);
     for (let i = 0; i < steps; i++) {
       const a = s0 + (s1 - s0) * i / steps, b = s0 + (s1 - s0) * (i + 1) / steps;
-      const ra = rAt(a), rb = rAt(b);
-      g.prism(circ, a, b, s0, 5, s0 >= 690 ? 1 : 0, true, ra, rb);
+      g.prism(circ, a, b, s0, 5, s0 >= 690 ? 1 : 0, true, rAt(a), rAt(b));
+      for (let k = 0; k < 3; k++) {
+        const wa = finW(a), wb = finW(b); if (wa <= 0.05) continue;
+        const ang = WING_A[k], ca = Math.cos(ang), sa = Math.sin(ang), t = 0.35;
+        const P = (r, v) => [r * ca - v * sa, r * sa + v * ca];
+        const fa = [P(rAt(a) - 0.5, -t), P(rAt(a) + wa, -t), P(rAt(a) + wa, t), P(rAt(a) - 0.5, t)];
+        const fb = [P(rAt(b) - 0.5, -t), P(rAt(b) + wb, -t), P(rAt(b) + wb, t), P(rAt(b) - 0.5, t)];
+        // fins taper: build each band as a quad loop between fa (bottom) and fb (top)
+        for (let e = 0; e < 4; e++) {
+          const p0 = fa[e], p1 = fa[(e + 1) % 4], q1 = fb[(e + 1) % 4], q0 = fb[e];
+          let nx = p1[1] - p0[1], nz = -(p1[0] - p0[0]); const mx = (p0[0] + p1[0]) / 2, mz = (p0[1] + p1[1]) / 2, cx = (fa[0][0] + fa[2][0]) / 2, cz = (fa[0][1] + fa[2][1]) / 2;
+          const l = Math.hypot(nx, nz) || 1; nx /= l; nz /= l; if (nx * (mx - cx) + nz * (mz - cz) < 0) { nx = -nx; nz = -nz; }
+          const i0 = g.v(p0[0], a - s0, p0[1], nx, 0, nz, a, 0, 6, 1), i1 = g.v(p1[0], a - s0, p1[1], nx, 0, nz, a, 1, 6, 1);
+          const i2 = g.v(q1[0], b - s0, q1[1], nx, 0, nz, b, 1, 6, 1), i3 = g.v(q0[0], b - s0, q0[1], nx, 0, nz, b, 0, 6, 1);
+          g.idx.push(i0, i1, i2, i0, i2, i3, i0, i2, i1, i0, i3, i2);
+        }
+      }
     }
     if (s1 >= 828) g.cap(circ, 828, s0, 5, 1, rAt(828));
-    // rings on the pinnacle/spire base
-    if (s0 === 600) { g.prism(circ, 600, 603, s0, 6, 1, true, 13, 13); g.cap(circ, 603, s0, 6, 1, 13); }
+    if (s0 === 600) { g.prism(circ, 600, 602.5, s0, 6, 1, true, 14, 14); g.cap(circ, 602.5, s0, 6, 1, 14); }
   }
   return g.geo();
 }
@@ -121,7 +163,7 @@ const HASH = /* glsl */`
 float h13(vec3 p3){ p3 = fract(p3 * 0.1031); p3 += dot(p3, p3.zyx + 31.32); return fract((p3.x + p3.y) * p3.z); }`;
 
 export function towerMaterial(U) {
-  const m = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.12, metalness: 0.85, envMapIntensity: 1.0 });
+  const m = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.12, metalness: 0.85, envMapIntensity: 1.6 });
   m.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, U);
     sh.vertexShader = sh.vertexShader.replace('#include <common>', `#include <common>
@@ -136,12 +178,13 @@ vec3 heat(float x){ x = clamp(x, 0.0, 1.25);
   c = mix(c, vec3(1.0,0.95,0.1), smoothstep(0.55,0.78,x)); c = mix(c, vec3(1.0,0.55,0.05), smoothstep(0.78,0.97,x));
   if (x >= 1.0) c = mix(vec3(1.0,0.12,0.04), vec3(1.0,0.9,0.85), smoothstep(1.0,1.25,x)); return pow(c, vec3(2.2)); }   // palette authored in sRGB; emissive is linear`)
       .replace('#include <color_fragment>', `#include <color_fragment>
-float mMetal = 0.85, mRough = 0.12; vec3 mEmis = vec3(0.0);
+float mMetal = 0.85, mRough = 0.12; vec3 mEmis = vec3(0.0); float mGlass = 0.0;
 {
   float fl = vGY / 3.75, ff = fract(fl), ms = vS / 1.55, mf = fract(ms);
   float fwS = fwidth(ms), fwF = fwidth(fl);
   float aaS = clamp(1.6 - fwS * 2.0, 0.0, 1.0), aaF = clamp(1.6 - fwF * 2.0, 0.0, 1.0);
-  float fin = (1.0 - smoothstep(0.05, 0.16 + fwS, abs(mf - 0.5) * -2.0 + 1.0)) ;
+  float heavy = step(0.5, fract(floor(ms) * 0.5));
+  float fin = (1.0 - smoothstep(mix(0.10, 0.22, heavy), mix(0.20, 0.32, heavy) + fwS, abs(mf - 0.5) * -2.0 + 1.0)) ;
   fin = mix(0.18, fin, aaS);
   float span = smoothstep(0.80 - fwF, 0.82 + fwF, ff) * (1.0 - smoothstep(0.97 - fwF, 1.0, ff));
   span = mix(0.17, span, aaF);
@@ -149,19 +192,20 @@ float mMetal = 0.85, mRough = 0.12; vec3 mEmis = vec3(0.0);
   float h1 = h13(cell), h2 = h13(cell + 17.3), h3 = h13(vec3(floor(fl / 5.0), floor(ms / 4.0), vF + 9.0));
   vec3 col;
   if (vK < 0.5) {
-    vec3 glass = vec3(0.30, 0.345, 0.40) * (0.9 + 0.2 * h2);
-    float gr = 0.07 + 0.06 * h1;
+    float tier = h13(vec3(floor(vGY / 18.5), vF, 3.0));
+    vec3 glass = vec3(0.11, 0.155, 0.235) * (0.9 + 0.14 * h2 + 0.08 * tier);
+    float gr = 0.14 + 0.05 * h1;
     float broken = step(h1, uDmg * (0.35 + 1.3 * h3)) * (1.0 - fin);
     vec3 finC = vec3(0.80, 0.81, 0.83), spC = vec3(0.42, 0.45, 0.50);
-    col = mix(glass, spC, span); mRough = mix(gr, 0.35, span); mMetal = mix(0.88, 0.7, span);
-    col = mix(col, finC, fin); mRough = mix(mRough, 0.28, fin); mMetal = mix(mMetal, 1.0, fin);
-    if (h2 < 0.035 && span < 0.5) mEmis = vec3(1.0, 0.72, 0.42) * 0.25;
-    if (broken > 0.5 && span < 0.5) { col = vec3(0.05, 0.045, 0.04); mRough = 0.95; mMetal = 0.0; mEmis = vec3(0.08, 0.05, 0.03) * h2; }
+    col = mix(glass, mix(glass, spC, 0.45), span); span *= 0.4; mRough = mix(gr, 0.35, span); mMetal = mix(0.55, 0.4, span);
+    col = mix(col, vec3(0.78, 0.79, 0.81), fin); mRough = mix(mRough, 0.38, fin); mMetal = mix(mMetal, 0.25, fin);
+    mGlass = (1.0 - fin) * (1.0 - span);
+    if (broken > 0.5 && span < 0.5) { col = vec3(0.05, 0.045, 0.04); mRough = 0.95; mMetal = 0.0; mEmis = vec3(0.08, 0.05, 0.03) * h2; mGlass = 0.0; }
   } else if (vK < 1.5) {
     float band = smoothstep(0.85, 0.9, fract(vGY / 6.0));
     col = mix(vec3(0.78, 0.79, 0.81), vec3(0.45, 0.47, 0.5), band); mRough = 0.3; mMetal = 1.0;
   } else {
-    col = vec3(0.62, 0.6, 0.57); mRough = 0.8; mMetal = 0.1;
+    col = vec3(0.70, 0.68, 0.64) * (0.9 + 0.1 * h13(vec3(floor(vS / 6.0), vGY, 1.0))); mRough = 0.75; mMetal = 0.05;
   }
   if (uStress > 0.0) {
     float fi = clamp(vGY / 828.0, 0.0, 1.0) * 47.0; int i0 = int(floor(fi)); int i1 = min(i0 + 1, 47);
@@ -194,9 +238,10 @@ float mMetal = 0.85, mRough = 0.12; vec3 mEmis = vec3(0.0);
 }`)
       .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mRough;')
       .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\nmetalnessFactor = mMetal;')
-      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += mEmis;');
+      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+totalEmissiveRadiance += mEmis;`);
   };
-  m.customProgramCacheKey = () => 'burj2';
+  m.customProgramCacheKey = () => 'burj3';
   return m;
 }
 
