@@ -1,0 +1,372 @@
+{
+ "osmId": "w446646206",
+ "tags": {
+  "addr:city": "دبي",
+  "addr:city:ar": "دبي",
+  "addr:city:en": "Dubai",
+  "addr:city:ur": "دبئی",
+  "addr:housenumber": "1",
+  "addr:street": "شارع الشيخ محمد بن راشد",
+  "alt_name:hu": "Kalifa-torony",
+  "alt_old_name:hu": "Dubaj-torony",
+  "area": "yes",
+  "building": "yes",
+  "building:levels": "163",
+  "building:levels:source": "burj-khalifa.dubai-tickets.co",
+  "building:material": "glass",
+  "check_date": "2025-12-09",
+  "email": "Info@atthetop.ae",
+  "image": "https://photos.app.goo.gl/1j9z8iSqA6hyPJYXA",
+  "landmark": "1",
+  "layer": "1",
+  "maxheight": "828",
+  "name": "برج خليفة",
+  "name:af": "Burj Khalifa",
+  "name:an": "Burch Khalifa",
+  "name:ar": "برج خليفة",
+  "name:ast": "Burj Khalifa",
+  "name:ba": "Бурдж-Хәлифә",
+  "name:be": "Бурдж-Халіфа",
+  "name:bg": "Бурдж Халифа",
+  "name:br": "Burj Khalifa",
+  "name:bs": "Burj Khalifa",
+  "name:ca": "Burj Khalifa",
+  "name:ckb": "بورجی خەلیفە",
+  "name:cs": "Burdž Chalífa",
+  "name:cu": "Боурджь Халифа",
+  "name:cy": "Burj Khalifa",
+  "name:da": "Burj Khalifa",
+  "name:de": "Burj Khalifa",
+  "name:el": "Μπουρτζ Χαλίφα",
+  "name:en": "Burj Khalifa",
+  "name:es": "Burj Khalifa",
+  "name:et": "Burj Khalīfah",
+  "name:eu": "Burj Khalifa",
+  "name:fa": "برج خلیفه",
+  "name:fi": "Burj Khalifa",
+  "name:fo": "Burj Khalifa",
+  "name:fr": "Burj Khalifa",
+  "name:fy": "Burj Khalifa",
+  "name:gl": "Burj Khalifa",
+  "name:gn": "Burj Khalifa",
+  "name:ha": "Burj Khalifa",
+  "name:he": "בורג' ח'ליפה",
+  "name:hi": "बुर्ज खलीफा",
+  "name:hu": "Burdzs Kalifa",
+  "name:id": "Burj Khalifa",
+  "name:is": "Burj Khalifa",
+  "name:it": "Burj Khalifa",
+  "name:ja": "ブルジュ・ハリファ",
+  "name:jv": "Burj Khalifa",
+  "name:kk": "Бурж Халифа",
+  "name:ko": "부르즈 할리파",
+  "name:ku": "Birca Xelîfe",
+  "name:kw": "Burj Khalifa",
+  "name:la": "Turris Khalifa",
+  "name:lt": "Burdž Chalifa",
+  "name:lv": "Burj Khalīfah",
+  "name:mk": "Бурџ Халифа",
+  "name:ml": "ബുർജ് ഖലീഫ",
+  "name:mn": "Бурж Халифа",
+  "name:ms": "Burj Khalifa",
+  "name:nl": "Burj Khalifa",
+  "name:nn": "Burj Khalifa",
+  "name:no": "Burj Khalifa",
+  "name:oc": "Burj Khalifa",
+  "name:pl": "Burdż Chalifa",
+  "name:pt": "Burj Khalifa",
+  "name:ro": "Burj Khalifa",
+  "name:ru": "Бурдж-Халифа",
+  "name:sco": "Burj Khalifa",
+  "name:sh": "Burj Khalifa",
+  "name:sk": "Burdž Khalífa",
+  "name:sl": "Burj Kalifa",
+  "name:so": "Burj Khalifa",
+  "name:sq": "Burxh Khalifa",
+  "name:sr": "Burdž Kalifa",
+  "name:sv": "Burj Khalifa",
+  "name:sw": "Burj Khalifa",
+  "name:th": "บุรจญ์เคาะลีฟะฮ์",
+  "name:tl": "Burj Khalifa",
+  "name:tr": "Burç Halife",
+  "name:tt": "Burc Xälifä",
+  "name:uk": "Бурдж Халіфа",
+  "name:uz": "Burj Xalifa",
+  "name:vi": "Burj Khalifa",
+  "name:war": "Burj Khalifa",
+  "name:yue": "哈利法塔",
+  "name:zh": "哈利法塔",
+  "note:height": "Building attributes (e.g., address, name, overall height, operator, etc.) must be tagged on the building outline. https://wiki.openstreetmap.org/wiki/Simple_3D_buildings#Building_outlines",
+  "old_name": "Burj Dubai",
+  "old_name:hu": "Burdzs Dubaj",
+  "old_name:zh-Hans": "迪拜塔",
+  "operator": "Emaar Properties",
+  "roof:material": "concrete",
+  "roof:shape": "flat",
+  "start_date": "2010-01-04",
+  "tourism": "attraction",
+  "url": "https://youtu.be/QmQykkr4hC0",
+  "url:0": "https://youtu.be/aCxbknkUCg4",
+  "website": "https://www.burjkhalifa.ae/",
+  "wheelchair": "limited",
+  "wikidata": "Q12495",
+  "wikipedia": "en:Burj Khalifa"
+ },
+ "centroid": [
+  4.6,
+  -7.6
+ ],
+ "area_m2": 7576.9,
+ "outline": [
+  [
+   -13.2,
+   9.5
+  ],
+  [
+   -15,
+   61
+  ],
+  [
+   -4.3,
+   85.2
+  ],
+  [
+   -0.3,
+   79.3
+  ],
+  [
+   10.2,
+   63.2
+  ],
+  [
+   17.7,
+   11.5
+  ],
+  [
+   18.5,
+   11.8
+  ],
+  [
+   20,
+   21.5
+  ],
+  [
+   24.3,
+   20.5
+  ],
+  [
+   28.3,
+   18.6
+  ],
+  [
+   31.9,
+   15.9
+  ],
+  [
+   34.8,
+   12.6
+  ],
+  [
+   36.9,
+   8.7
+  ],
+  [
+   38.3,
+   4.5
+  ],
+  [
+   38.7,
+   0.1
+  ],
+  [
+   38.2,
+   -4.3
+  ],
+  [
+   28.8,
+   -2.3
+  ],
+  [
+   28.5,
+   -3
+  ],
+  [
+   72.3,
+   -23.1
+  ],
+  [
+   89.4,
+   -43.3
+  ],
+  [
+   63.2,
+   -46.6
+  ],
+  [
+   16.1,
+   -31.3
+  ],
+  [
+   15.9,
+   -32.2
+  ],
+  [
+   23.1,
+   -38.3
+  ],
+  [
+   19.4,
+   -41.7
+  ],
+  [
+   15.1,
+   -44.3
+  ],
+  [
+   10.3,
+   -45.8
+  ],
+  [
+   5.3,
+   -46.2
+  ],
+  [
+   0.3,
+   -45.6
+  ],
+  [
+   -4.4,
+   -43.9
+  ],
+  [
+   -8.7,
+   -41.2
+  ],
+  [
+   -1.7,
+   -33.6
+  ],
+  [
+   -2.1,
+   -32.7
+  ],
+  [
+   -42.5,
+   -58.5
+  ],
+  [
+   -68.9,
+   -62.3
+  ],
+  [
+   -57.7,
+   -38.5
+  ],
+  [
+   -20.4,
+   -7.1
+  ],
+  [
+   -21.2,
+   -6.4
+  ],
+  [
+   -29.7,
+   -10.2
+  ],
+  [
+   -31.1,
+   -5.8
+  ],
+  [
+   -31.5,
+   -1.3
+  ],
+  [
+   -30.9,
+   3.2
+  ],
+  [
+   -29.2,
+   7.4
+  ],
+  [
+   -27.1,
+   11.4
+  ],
+  [
+   -24.2,
+   14.8
+  ],
+  [
+   -20.6,
+   17.5
+  ],
+  [
+   -16.5,
+   19.4
+  ],
+  [
+   -14.2,
+   10.1
+  ]
+ ],
+ "wingTips": [
+  {
+   "bearingDeg": 67.2,
+   "dist": 92,
+   "x": 89.4,
+   "z": -43.3
+  },
+  {
+   "bearingDeg": 185.5,
+   "dist": 93.3,
+   "x": -4.3,
+   "z": 85.2
+  },
+  {
+   "bearingDeg": 306.6,
+   "dist": 91.6,
+   "x": -68.9,
+   "z": -62.3
+  }
+ ],
+ "excludedParts": [
+  "w137140331",
+  "w137140334",
+  "w137140336",
+  "w137140340",
+  "w137140345",
+  "w137140348",
+  "w137140354",
+  "w137140355",
+  "w137140358",
+  "w137140361",
+  "w137140363",
+  "w137140366",
+  "w137140368",
+  "w137140371",
+  "w137140374",
+  "w137147712",
+  "w137147715",
+  "w137153127",
+  "w137153131",
+  "w137153135",
+  "w137153136",
+  "w137153137",
+  "w137153138",
+  "w137153139",
+  "w137153140",
+  "w137153141",
+  "w137153142",
+  "w137153143",
+  "w137153144",
+  "w617912395",
+  "w1094648913",
+  "w1094648914",
+  "w1094648915",
+  "w1094648916",
+  "w1094648917"
+ ],
+ "note": "bearing = degrees clockwise from true north, measured from the outline centroid; in app coords a bearing b points along (x, z) = (sin b, -cos b)."
+}

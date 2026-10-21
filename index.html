@@ -10,12 +10,14 @@
   #ui { position: fixed; inset: 0; pointer-events: none; }
   #boot { position: fixed; inset: 0; display: grid; place-items: center; color: #e8dccb; font: 500 15px Inter, system-ui, sans-serif; letter-spacing: .12em; transition: opacity .6s; }
   body.ready #boot { opacity: 0; pointer-events: none; }
+  #attr { position: fixed; left: 50%; transform: translateX(-50%); bottom: 4px; font: 500 10px Inter, system-ui, sans-serif; color: rgba(255,255,255,.55); text-shadow: 0 1px 3px rgba(0,0,0,.6); pointer-events: auto; white-space: nowrap; }
+  #attr a { color: inherit; }
   noscript { position: fixed; inset: 0; display: grid; place-items: center; color: #fff; }
 </style>
 <link rel="stylesheet" href="app/ui/ui.css">
 <script type="importmap">{"imports":{"three":"./src/vendor/three.module.js","three/addons/":"./src/vendor/jsm/"}}</script>
 </head><body>
-<canvas id="gl"></canvas><div id="ui"></div><div id="boot">BUILDING DOWNTOWN DUBAI…</div>
+<canvas id="gl"></canvas><div id="ui"></div><div id="attr">City data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> (ODbL)</div><div id="boot">BUILDING DOWNTOWN DUBAI…</div>
 <noscript>Burj Quake needs JavaScript and WebGL 2.</noscript>
 <script type="module" src="app/main.js"></script>
 </body></html>

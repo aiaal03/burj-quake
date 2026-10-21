@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { ground, amp, T_RIFT, sm, ramp, clamp } from './quake.js';
 import * as Q from './quake.js';
+import { GROUND_GLSL, GU } from './city_real.js';
 // Scenario contract (interactive app): every update takes (t, sc). sc = null → the film timeline in quake.js.
 // Otherwise sc may override any of: amp(t), ground(x,z,t,out), bldSway(h,t,seed), bldFailTime(h,style,seed), T_RIFT
 // (number, or null = no rift). Anything missing falls back to quake.js.
@@ -64,7 +65,13 @@ export function makeEnv(renderer, dust = 0) {
 
 // ---------------- lake ----------------
 export const LAKE = { cx: -60, cz: 330, rx: 330, rz: 215 };
+// real water (data/city.json) — set by dubai.js once the city data is loaded; LAKE is updated in place to the real
+// Burj Lake bbox so camera code that reads LAKE.cx/cz/rx/rz follows it
+let WATER = null;
+export function setWater(w) { WATER = w; if (w && w.lake) Object.assign(LAKE, w.lake); }
+export const lakeInfo = () => ({ ...LAKE, inLake, polys: WATER ? WATER.polys : null });
 export function inLake(x, z, pad = 0) {
+  if (WATER) return WATER.inWater(x, z, pad);
   const a = Math.atan2((z - LAKE.cz) / LAKE.rz, (x - LAKE.cx) / LAKE.rx);
   const w = 1 + 0.08 * Math.sin(a * 3 + 1) + 0.05 * Math.sin(a * 5 + 2);
   const r = Math.hypot((x - LAKE.cx) / (LAKE.rx * w + pad), (z - LAKE.cz) / (LAKE.rz * w + pad));
@@ -81,7 +88,8 @@ function lakeShape() {
 }
 const WATER_VS = /* glsl */`uniform mat4 uTexM; varying vec4 vR; varying vec3 vW;
 #include <fog_pars_vertex>
-void main(){ vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; vR = uTexM * w; vec4 mvPosition = viewMatrix * w; gl_Position = projectionMatrix * mvPosition;
+${GROUND_GLSL}
+void main(){ vec4 w = modelMatrix * vec4(position, 1.0); { vec2 gh; w.y += groundF(w.xz, gh).x; } vW = w.xyz; vR = uTexM * w; vec4 mvPosition = viewMatrix * w; gl_Position = projectionMatrix * mvPosition;
 #include <fog_vertex>
 }`;
 const WATER_FS = /* glsl */`uniform sampler2D tRefl; uniform float uTime, uRip, uSlosh; uniform vec3 uSun; varying vec4 vR; varying vec3 vW;
@@ -107,13 +115,13 @@ void main(){
   gl_FragColor = vec4(c, 1.0);
 #include <fog_fragment>
 }`;
-export function makeLake(renderer, opts) {
+export function makeLake(renderer, opts, shapes = null) {
   const [rw, rh] = qOf(opts).lakeRT;
   const rt = new THREE.WebGLRenderTarget(rw, rh, { type: THREE.HalfFloatType });
   const U = THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { tRefl: { value: null }, uTexM: { value: new THREE.Matrix4() }, uTime: { value: 0 }, uRip: { value: 0 }, uSlosh: { value: 0 }, uSun: { value: SUN.clone() } }]);
-  U.tRefl.value = rt.texture;
+  U.tRefl.value = rt.texture; U.uGT = GU.uGT; U.uGA = GU.uGA;
   const m = new THREE.ShaderMaterial({ uniforms: U, vertexShader: WATER_VS, fragmentShader: WATER_FS, fog: true });
-  const g = new THREE.ShapeGeometry(lakeShape(), 4); g.rotateX(-Math.PI / 2);
+  let g; if (shapes && shapes.isBufferGeometry) g = shapes; else { g = new THREE.ShapeGeometry(shapes && shapes.length ? shapes : lakeShape(), 4); g.rotateX(-Math.PI / 2); }
   const mesh = new THREE.Mesh(g, m); mesh.position.y = 0.4; mesh.receiveShadow = false;
   const vc = new THREE.PerspectiveCamera(); const tm = new THREE.Matrix4(), V = new THREE.Vector3(), D = new THREE.Vector3(), up = new THREE.Vector3();
   const hide = [];

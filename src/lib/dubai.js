@@ -2,7 +2,9 @@
 import * as THREE from 'three';
 import * as Q from './quake.js';
 import { makeTower } from './tower.js';
-import { SUN, makeSky, makeEnv, makeLake, makeGround, makeCity, makeCars, makePalmsLamps, makeRift, RIFT, inLake, fnOf, riftT } from './world.js';
+import { SUN, makeSky, makeEnv, makeLake, makeGround, makeCity, makeCars, makePalmsLamps, makeRift, RIFT, inLake, fnOf, riftT, riftDist, setWater } from './world.js';
+import { loadCityData, makeRealCity, setGroundUniforms } from './city_real.js';
+import { makeWater, prepRoads, makeRealGround, makeRoads, makeTrains, makeTrees, makeRealCars } from './city_ground.js';
 import { makeDust, makeBits } from './fx.js';
 
 export const W_ = {};
@@ -16,16 +18,23 @@ export async function setup(K) {
   const scene = new THREE.Scene();
   const sky = makeSky(); scene.add(sky.mesh);
   const env0 = makeEnv(R, 0), env1 = makeEnv(R, 0.55);
-  const groundM = makeGround(K, opts); scene.add(groundM.mesh, groundM.far);
-  const lake = makeLake(R, opts); scene.add(lake.mesh); lake.hide.push(groundM.mesh);
-  const city = makeCity(K, opts); scene.add(city.group);
-  const cars = makeCars(opts); scene.add(cars.group);
-  const pl = makePalmsLamps(); scene.add(pl.group);
+  // real Downtown Dubai (data/city.json from OSM; ?city=mock → generated stand-in)
+  const T1 = performance.now();
+  const D = await loadCityData(), water = makeWater(D); setWater(water);
+  const roads = prepRoads(D);
+  const groundM = makeRealGround(K, opts, D, roads, water); scene.add(groundM.mesh, groundM.far);
+  const lake = makeLake(R, opts, water.polys.length ? water.geometry() : null); scene.add(lake.mesh); lake.hide.push(groundM.mesh);
+  const city = makeRealCity(K, opts, D, { riftDist }); scene.add(city.group);
+  const roadsM = makeRoads(D, roads); scene.add(roadsM.group); lake.hide.push(roadsM.group);
+  const trains = makeTrains(roadsM.lines); scene.add(trains.mesh);
+  const cars = makeRealCars(roads, opts); scene.add(cars.group);
+  const pl = makeTrees(D, roads, water, opts); scene.add(pl.group);
+  console.log('dubai: city data', D.meta?.source, 'build ms', (performance.now() - T1).toFixed(0));
   const rift = makeRift(); scene.add(rift.mesh);
   const tower = makeTower(Q.FILM); scene.add(tower.root);
   scene.fog = new THREE.FogExp2('#d9b48a', 0.00009);
   const noDust = typeof location !== 'undefined' && new URLSearchParams(location.search).get('nodust') === '1';   // QA: inspect the structure under the dust
-  Object.assign(W_, { scene, sky, env0, env1, groundM, lake, city, cars, pl, rift, tower, quality, noDust, fxK: RT_ ? 0.45 : 1, dustThin: RT_ ? 2 : 1 });
+  Object.assign(W_, { scene, sky, env0, env1, groundM, lake, city, cars, pl, rift, roadsM, trains, cityData: D, water, tower, quality, noDust, fxK: RT_ ? 0.45 : 1, dustThin: RT_ ? 2 : 1 });
   const T0 = performance.now();
   const L = buildFx(Q.FILM);
   const shardMat = new THREE.MeshStandardMaterial({ color: '#dfe6ee', metalness: 1, roughness: 0.025, side: THREE.DoubleSide, envMapIntensity: 1.8 });
@@ -167,7 +176,8 @@ export function updateWorld(t, sc = Q.FILM) {
   if (sc !== W.fxSc) rebuildFx(sc);
   const st = W.tower.pose(t, sc);   // also sets uDmg / stress profile uniforms from sc
   const wsc = sc === Q.FILM ? null : sc;
-  W.groundM.update(t, wsc); W.city.update(t, wsc); W.cars.update(t, wsc); W.pl.update(t, wsc); W.rift.update(t, wsc);
+  setGroundUniforms(t, wsc);
+  W.groundM.update(t, wsc); W.city.update(t, wsc); W.cars.update(t, wsc); W.pl.update(t, wsc); W.rift.update(t, wsc); W.trains.update(t, wsc);
   W.shardB.update(t); W.debB.update(t);
   if (W.noDust) W.dustM.mesh.visible = false;
   const dz = dustLevel(sc, t);
@@ -177,7 +187,7 @@ export function updateWorld(t, sc = Q.FILM) {
   W.dustM.U.fogColor.value.copy(W.scene.fog.color); W.dustM.U.fogDensity.value = W.scene.fog.density;
   const A = sc.amp(t);
   W.lake.U.uTime.value = t; W.lake.U.uRip.value = Math.min(0.9, A * 3.0); W.lake.U.uSlosh.value = Math.min(1.6, Math.max(0, A - 0.4) * 0.35);
-  W.lake.mesh.position.y = 0.4 + sc.ground(LAKEC[0], LAKEC[1], t, GO).y * 0.7;
+  W.lake.mesh.position.y = 0;   // the water surface rides ground() in its vertex shader
   // one golden-hour light for the whole film (sun 12° WSW); dust only dims it, never changes its colour/direction
   const light = { key: { dir: [SUN.x, SUN.y, SUN.z], col: '#ffc387', intensity: 5.4 * (1 - dz * 0.45), soft: 0.01 },
     sky: { col: '#9fb8dc', intensity: 0.30 + dz * 0.2, up: [0, 1, 0], spread: 1 }, hemi: { sky: '#a0b4d4', ground: '#9c7b5a', intensity: 0.2 + dz * 0.16 }, env: 0.55 };

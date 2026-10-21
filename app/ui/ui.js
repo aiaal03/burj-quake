@@ -26,7 +26,7 @@ export const CARDS = {
     kind: 'doc', title: 'Why short buildings are in more danger',
     text: ['Natural sway period: T ≈ 0.1 s per storey. Low- and mid-rises (0.1–1 s) resonate with fast, near-field shaking.',
       'The Burj’s first sway mode is T = 11.3 s.'],
-    src: `${SRC.BKN}; research brief §7`,
+    src: `${SRC.BKN}; docs/SCIENCE.md §7`,
   },
   design: {
     kind: 'doc', title: 'What sized the tower',
@@ -174,7 +174,7 @@ export function createUI(root, handlers = {}, opts = {}) {
       el('div', '', {}, [document.createTextNode('Small building'), el('b', '', { text: 'T ≈ 0.5 s' }), el('span', 'bq-pill is-in', { text: 'IN TUNE' })]),
       el('div', '', { style: 'text-align:right' }, [document.createTextNode('Burj Khalifa'), el('b', '', { text: 'T = 11.3 s' }), el('span', 'bq-pill is-out', { text: 'OUT OF TUNE' })]),
     ]),
-    el('p', 'bq-src', { text: 'Natural sway period T. Glyphs move at true relative speed (22.6×). Sources: research brief §4, §7.' }),
+    el('p', 'bq-src', { text: 'Natural sway period T. Glyphs move at true relative speed (22.6×). Sources: docs/SCIENCE.md §4, §7.' }),
   ]);
 
   // strip

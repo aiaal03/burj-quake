@@ -4,7 +4,9 @@ import * as THREE from 'three';
 import { SBINS, DEF_SCALE, G_FILM, SPIRE_PIVOT, FILM, MOUND_X } from './quake.js';
 
 export const HT = 828;
-const WING_A = [90, 210, 330].map((d) => d * Math.PI / 180);
+// Wing axes as angles in the (x, z) plane (x = east, z = south). Real wing-tip bearings from OSM way 446646206
+// (data/burj_khalifa_osm.json): S 185.5°, NW 306.6°, NE 67.2° → (sin b, −cos b) → plane angles ≈ 95.5°, 216.6°, 337.2°.
+const WING_A = [95.5, 216.6, 337.2].map((d) => d * Math.PI / 180);
 const L0 = 60, L1 = 13, W0 = 36, W1 = 22, RC = 18;
 const SETBACK = Array.from({ length: 24 }, (_, j) => 140 + j * 18.5);   // 'two dozen' spiral setbacks (Baker)
 export const BOUNDS = [...Array.from({ length: 21 }, (_, i) => i * 30), 645, 690, 740, 790, 828];

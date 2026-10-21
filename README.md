@@ -8,7 +8,7 @@
 
 Pick a magnitude and press **Shake**. You can then orbit around Downtown Dubai and switch between three views:
 
-- **Normal:** the city and the tower at golden hour.
+- **Normal:** real Downtown Dubai (OpenStreetMap footprints and heights, roads, the Metro viaduct, Burj Lake) and the tower at golden hour.
 - **Stress:** a heat map of load ÷ capacity on the tower. Red means past the limit.
 - **X-ray:** the structural anatomy. It shows the Y-shaped buttressed core, the reinforced concrete up to level 156, the steel spire above it, and the 3.7 m raft on piles.
 
@@ -65,7 +65,11 @@ app/orbit.js          touch/mouse orbit camera
 app/ui/               HTML/CSS overlay: magnitude, views, load meter, seismograph, info and period cards
 src/lib/quake.js      physics model: ground motion, tower modes, demand ÷ capacity, building periods, makeScenario(M)
 src/lib/tower.js      procedural Burj Khalifa: Y-plan, spiral setbacks, spire; segment chain that sways, breaks, overturns
-src/lib/world.js      sky, Burj Lake with planar reflection, ground, procedural Downtown (3 height bands), cars, palms, rift
+src/lib/world.js      sky, Burj Lake with planar reflection, rift, city assembly
+src/lib/city_real.js  real Downtown from data/city.json: extruded footprints, procedural facades, roofs, GPU per-building shaking/collapse
+src/lib/city_ground.js terrain (GPU ground waves), roads with markings, bridges, Metro viaduct + trains, palms, lamps, cars
+app/render/           ambient occlusion, cascaded shadows, atmospheric haze, quality presets
+data/                 city.json from OpenStreetMap (ODbL) + build scripts in tools/data (see docs/DATA.md)
 src/lib/fx.js         GPU dust, glass shards, debris
 src/lib/dubai.js      assembles the world; updateWorld(t, scenario), rebuildFx(scenario)
 src/core/             shared shader/material helpers and easing
@@ -85,6 +89,6 @@ Please keep every on-screen fact traceable to a source in `docs/SCIENCE.md`, and
 
 ## License
 
-The code is under the [MIT license](LICENSE). three.js is MIT and Inter is OFL; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+The code is under the [MIT license](LICENSE). City data © OpenStreetMap contributors (ODbL 1.0). three.js is MIT and Inter is OFL; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 This is an independent educational project. It is not affiliated with or endorsed by Emaar Properties, Skidmore, Owings & Merrill, or anyone involved with the building. "Burj Khalifa" refers to the real building, which this app depicts for education.

@@ -1,9 +1,14 @@
 // Burj Quake — interactive real-time app. Pick a magnitude, shake, orbit, switch views.
 // Rendering: scene → linear HDR target → post (cheap bloom, ACES, grade, sRGB) — same look as the film renderer.
 import * as THREE from 'three';
+import { makeAtmosphere } from './render/atmosphere.js';   // [render] overrides fog chunks — must load before any material compiles
+import { makeShadows } from './render/shadows.js';
+import { makeAO } from './render/ao.js';
+import { makeQuality } from './render/quality.js';
 import { canvasTex, polyMat, lightMat, shadowAll } from '../src/core/poly.js';
 import * as T from '../src/core/time.js';
 import { setup as setupWorld, updateWorld, W_ } from '../src/lib/dubai.js';
+import { SUN } from '../src/lib/world.js';
 import * as Q from '../src/lib/quake.js';
 import { makeOrbit } from './orbit.js';
 import { makeDirector } from './director.js';   // [director] multi-shot camera mode
@@ -12,17 +17,21 @@ const qs = new URLSearchParams(location.search);
 const canvas = document.getElementById('gl');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
 renderer.outputColorSpace = THREE.LinearSRGBColorSpace; renderer.toneMapping = THREE.NoToneMapping;
-renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFShadowMap;   // r185: PCFSoft is deprecated → PCF (soft via shadow.radius)
 const DPR = Math.min(window.devicePixelRatio || 1, qs.get('dpr') ? +qs.get('dpr') : 1.5);
 renderer.setPixelRatio(DPR);
 
 // ---------- post ----------
 const FS_VS = `out vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`;
 const POST_FS = `precision highp float; in vec2 vUv; out vec4 o;
-uniform sampler2D tScene, tBloom; uniform float uBloom, uExpo, uSat, uContrast, uVig, uWarm; uniform vec3 uTint, uLift;
+uniform sampler2D tScene, tBloom, tAO; uniform float uAO, uAODbg; uniform float uBloom, uExpo, uSat, uContrast, uVig, uWarm; uniform vec3 uTint, uLift;
 vec3 aces(vec3 x){ return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
 vec3 tosrgb(vec3 c){ c = max(c, 0.0); return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c)); }
-void main(){ vec3 c = texture(tScene, vUv).rgb + texture(tBloom, vUv).rgb * uBloom * vec3(1.0, 0.85, 0.7);
+void main(){ vec3 c = texture(tScene, vUv).rgb;
+  if (uAODbg > 0.5) { o = vec4(texture(tAO, vUv).rgb, 1.0); return; }
+  { float ao = texture(tAO, vUv).r; float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+    c *= mix(1.0, ao, uAO * (1.0 - smoothstep(2.0, 6.0, l))); }   // AO in linear HDR, spares emissive/sun-hot pixels
+  c += texture(tBloom, vUv).rgb * uBloom * vec3(1.0, 0.85, 0.7);
   c = aces(c * uExpo * 0.9); float l = dot(c, vec3(0.2126, 0.7152, 0.0722)); c = mix(vec3(l), c, uSat);
   c = (c - 0.18) * uContrast + 0.18; c = c * uTint + uLift; c *= mix(vec3(1.0), vec3(1.04, 1.0, 0.94), uWarm);
   vec3 s = tosrgb(clamp(c, 0.0, 1.0)); vec2 q = vUv - 0.5; s *= 1.0 - uVig * dot(q, q) * 1.5; o = vec4(s, 1.0); }`;
@@ -34,19 +43,33 @@ void main(){ float w[5] = float[](0.227027, 0.1945946, 0.1216216, 0.054054, 0.01
 const mkPass = (fs, u) => new THREE.ShaderMaterial({ uniforms: u, vertexShader: FS_VS, fragmentShader: fs, glslVersion: THREE.GLSL3, depthTest: false, depthWrite: false });
 const fsScene = new THREE.Scene(), fsCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1), fsMesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2)); fsMesh.frustumCulled = false; fsScene.add(fsMesh);
 const P = {
-  post: mkPass(POST_FS, { tScene: { value: null }, tBloom: { value: null }, uBloom: { value: 0.2 }, uExpo: { value: 1 }, uSat: { value: 1 }, uContrast: { value: 1.08 }, uVig: { value: 0.18 }, uWarm: { value: 0.12 },
+  post: mkPass(POST_FS, { tScene: { value: null }, tBloom: { value: null }, tAO: { value: null }, uAO: { value: 0.85 }, uAODbg: { value: qs.get('aoview') ? 1 : 0 }, uBloom: { value: 0.2 }, uExpo: { value: 1 }, uSat: { value: 1 }, uContrast: { value: 1.08 }, uVig: { value: 0.18 }, uWarm: { value: 0.12 },
     uTint: { value: new THREE.Vector3(1.015, 1.0, 0.975) }, uLift: { value: new THREE.Vector3(0.006, 0.009, 0.014) } }),
   bright: mkPass(BRIGHT_FS, { tSrc: { value: null }, uTh: { value: 1.6 } }),
   blur: mkPass(BLUR_FS, { tSrc: { value: null }, uDir: { value: new THREE.Vector2() } }),
 };
-const mkRT = (w, h, depth) => new THREE.WebGLRenderTarget(w, h, { type: THREE.HalfFloatType, depthBuffer: depth, samples: depth ? 4 : 0 });
+const MSAA = qs.has('msaa') ? +qs.get('msaa') : 4;
+const mkRT = (w, h, depth) => { const rt = new THREE.WebGLRenderTarget(w, h, { type: THREE.HalfFloatType, depthBuffer: depth, samples: depth ? MSAA : 0 });
+  if (depth) rt.depthTexture = new THREE.DepthTexture(w, h, THREE.FloatType);   // [render] resolved MSAA depth → AO
+  return rt; };
 let rtScene, rtB1, rtB2;
 const pass = (m, target) => { fsMesh.material = m; renderer.setRenderTarget(target); renderer.render(fsScene, fsCam); };
 
 // ---------- world ----------
 const K = { THREE, R: { renderer }, canvasTex, polyMat, lightMat, shadowAll, T, quality: qs.get('quality') || 'realtime' };
 const camera = new THREE.PerspectiveCamera(45, 1, 1.5, 30000);
-const sun = new THREE.DirectionalLight(0xffffff, 3); sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048); sun.shadow.bias = -0.0005; sun.shadow.normalBias = 0.6;
+// [render] quality preset, cascaded sun shadows, AO, haze (app/render/*)
+const RQ = makeQuality(qs);
+const shadows = makeShadows({ renderer, camera, sunDir: SUN, enabled: RQ.csm, cascades: RQ.P.cascades, size: RQ.P.shadowSize });
+const ao = makeAO({ renderer, samples: RQ.P.aoSamples, scale: RQ.P.aoScale }); ao.enabled = RQ.ao; if (qs.get('aoview') === '2') ao.uniforms.uFrame.value = 1;
+const atmo = makeAtmosphere(); atmo.enabled = RQ.haze;
+const degradeStep = (lv) => {
+  if (lv === 0 && ao.enabled) { ao.setScale(0.34); ao.setSamples(8); return 'AO 1/3 res, 8 samples'; }
+  if (shadows.S.enabled && shadows.S.cascades > 2) { shadows.setCascades(shadows.S.cascades - 1); return 'cascades → ' + shadows.S.cascades; }
+  if (shadows.S.enabled && shadows.S.size > 2048) { shadows.S.size = 2048; shadows.setCascades(shadows.S.cascades); return 'shadow map 2048'; }   // (rebuild)
+  if (ao.enabled) { ao.enabled = false; return 'AO off'; }
+  return null;
+};
 const skyL = new THREE.HemisphereLight(0xffffff, 0x444444, 0.5);
 const ambSky = new THREE.DirectionalLight(0xffffff, 0.3);
 
@@ -67,7 +90,7 @@ function resize() {
   camera.fov = w / h < 0.8 ? 58 : 42; camera.updateProjectionMatrix();
   const pw = Math.round(w * DPR), ph = Math.round(h * DPR);
   rtScene?.dispose(); rtB1?.dispose(); rtB2?.dispose();
-  rtScene = mkRT(pw, ph, true); rtB1 = mkRT(pw >> 2, ph >> 2, false); rtB2 = mkRT(pw >> 2, ph >> 2, false);
+  rtScene = mkRT(pw, ph, true); rtB1 = mkRT(pw >> 2, ph >> 2, false); rtB2 = mkRT(pw >> 2, ph >> 2, false); ao.resize(pw, ph);
 }
 
 const V = new THREE.Vector3();
@@ -133,22 +156,24 @@ function tick(dt) {
   orbit.update(dt);
   W_.sky.mesh.position.copy(camera.position);
   const scene = W_.scene;
-  if (sun.parent !== scene) scene.add(sun, sun.target, skyL, ambSky, ambSky.target);
-  const c = orbit.S, sd = new THREE.Vector3(...L.key.dir).normalize();
-  const fc = new THREE.Vector3(c.tx, 0, c.tz), rad = Math.min(1800, Math.max(400, c.dist * 0.9));
-  sun.position.copy(fc).addScaledVector(sd, rad * 3); sun.target.position.copy(fc);
-  Object.assign(sun.shadow.camera, { left: -rad, right: rad, top: rad, bottom: -rad, near: 1, far: rad * 6 }); sun.shadow.camera.updateProjectionMatrix();
-  sun.color.set(L.key.col); sun.intensity = L.key.intensity * dim;
+  if (skyL.parent !== scene) { scene.add(skyL, ambSky, ambSky.target); shadows.attach(scene); }
+  shadows.sync(scene);   // [render] CSM-setup any lit material the world added since last frame
+  const c = orbit.S;
+  camera.updateMatrixWorld();
+  shadows.update({ D: c.dist, focus: new THREE.Vector3(c.tx, 0, c.tz), color: L.key.col, intensity: L.key.intensity * dim });
   ambSky.position.set(0, 1000, 0); ambSky.color.set(L.sky.col); ambSky.intensity = L.sky.intensity * dim;
   skyL.color.set(L.hemi.sky); skyL.groundColor.set(L.hemi.ground); skyL.intensity = (L.hemi.intensity + 0.15) * dim;
   scene.environment = st.dz > 0.3 ? W_.env1 : W_.env0; scene.environmentIntensity = L.env * dim;
+  atmo.update(scene, st.dz);   // [render] height/aerial haze (dust-coupled)
   // render
   camera.updateMatrixWorld();
   renderer.setRenderTarget(rtScene); renderer.setClearColor(0xd9b48a, 1); renderer.clear(); renderer.render(scene, camera);
   P.bright.uniforms.tSrc.value = rtScene.texture; pass(P.bright, rtB1);
   P.blur.uniforms.tSrc.value = rtB1.texture; P.blur.uniforms.uDir.value.set(1.5 / rtB1.width, 0); pass(P.blur, rtB2);
   P.blur.uniforms.tSrc.value = rtB2.texture; P.blur.uniforms.uDir.value.set(0, 1.5 / rtB1.height); pass(P.blur, rtB1);
+  P.post.uniforms.tAO.value = ao.render(rtScene.depthTexture, camera, 1 - Math.min(0.7, st.dz * 0.9));   // dust has no depth → fade AO under it
   P.post.uniforms.tScene.value = rtScene.texture; P.post.uniforms.tBloom.value = rtB1.texture; pass(P.post, null);
+  RQ.tick(app.fps, dt, degradeStep);
   ui?.update(buildState());
 }
 
@@ -171,12 +196,14 @@ async function boot() {
   if (qs.get('ui') === '0') document.getElementById('ui').style.display = 'none';
   document.body.classList.add('ready');
   if (qs.has('t')) { app.t = +qs.get('t'); }
-  if (qs.has('tour')) director.startTour();
   if (qs.has('view')) { setView(qs.get('view')); ui?.setView?.(qs.get('view')); }
   // [director] multi-shot camera mode (own DOM + CSS in app/director.*)
   director = makeDirector({ camera, canvas, orbit, app, root: document.getElementById('ui'), setView: (v) => { setView(v); ui?.setView?.(v); } });
   director.setHooks({ setMagnitude, shake });
-  window.bq = { setMagnitude, shake, reset, setView: (v) => { setView(v); ui?.setView?.(v); }, tick, orbit, director };
+  if (qs.has('tour')) director.startTour();
+  window.bq = { setMagnitude, shake, reset, setView: (v) => { setView(v); ui?.setView?.(v); }, tick, orbit, director,
+    render: { refreshMaterials: () => shadows.refresh(), shadows, ao, atmo, quality: RQ, post: P.post,   // [render]
+      state: () => ({ preset: RQ.name, ao: ao.enabled ? { scale: ao.scale, samples: ao.samples } : false, csm: shadows.info(), haze: atmo.enabled, degraded: RQ.log.slice() }) } };
   window.ready = true;
   requestAnimationFrame(frame);
 }
