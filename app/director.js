@@ -34,8 +34,10 @@ const CAP = {
   down: 'Tall towers fall down, not over',          // ENGINEERING §9
   hypo: 'Hypothetical · beyond design',             // SCIENCE caption guidance
   rec: 'Largest recorded: M9.5, Chile 1960',        // SCIENCE caption guidance
+  wings: 'Three wings buttress each other',       // SCIENCE 1
+  setback: 'Spiral setbacks confuse the wind',      // SCIENCE 3
 };
-const KICK = { orbit: 'Burj Khalifa', aerial: 'Establishing', street: 'Street level', mid: 'Street level', lake: 'Lake', spire: 'Spire', base: 'Base', side: 'Side view', wide: 'Aftermath', link: 'Core', after: 'Aftermath' };
+const KICK = { wide: 'Burj Khalifa · 828 m', top: 'Plan view', core: 'Structure', facade: 'Facade · setbacks', spire: 'Spire joint · level 156', base: 'Base', hero: 'From the plaza', side: 'Side view' };
 
 export function makeDirector({ camera, canvas, orbit, app, setView, root }) {
   // ---------- DOM (own file, own classes; matches ui.css look) ----------
@@ -148,39 +150,89 @@ export function makeDirector({ camera, canvas, orbit, app, setView, root }) {
 
   // One continuous orbit around the tower (no cuts): the tower stays whole in frame, the camera circles it and slowly
   // rises from the base to the spire; view modes and captions follow the load on the structure.
-  function buildPlan(sc) {
-    const M = sc.M, end = sc.end, tS = sc.tSpire, tB = sc.tBreak, tI = sc.tImpact;
-    const views = [], caps = [];
-    let last = null;
-    for (let t = 0; t <= end; t += 0.05) {
-      let v;
-      if (t < 2.2 && !(D.tour && D.tour.i > 0)) v = 'xray';
-      else if (isFinite(tB) && t >= tB + 0.3) v = 'normal';
-      else if (isFinite(tS) && t >= tS + 0.2 && t < tS + 1.6) v = 'normal';            // watch the spire go
-      else if (M < 6.5) v = t > 5 && t < 9.5 ? 'stress' : 'normal';                      // show how little load there is
-      else v = sc.stressMax(t) >= 0.45 ? 'stress' : 'normal';
-      if (v !== last) { views.push([t, v]); last = v; }
-    }
-    if (D.tour && TOUR_CAP[M]) caps.push([0, TOUR_CAP[M]]);
-    else { caps.push([0, CAP.core]); caps.push([2.4, CAP.burjT]); }
-    if (M < 6.5) caps.push([5.2, CAP.baseOk], [9.8, CAP.wind]);
-    else if (!isFinite(tS)) { caps.push([5.0, CAP.bend]); if (M >= 7.85) caps.push([8.0, CAP.fuse]); caps.push([11.5, CAP.baseOk]); }
-    else {
-      caps.push([Math.max(2.6, tS - 1.6), CAP.spireJ], [tS, CAP.spireF]);
-      if (isFinite(tB)) caps.push([Math.max(tS + 1.4, tB - 2.0), CAP.bend], [tB, CAP.crush], [tB + 2.2, CAP.down], [tI + 1.0, CAP.rec]);
-      else caps.push([tS + 2.0, CAP.spireSeis], [tS + 6.0, CAP.hypo]);
-    }
-    caps.sort((p, q) => p[0] - q[0]);
-    return [{ type: 'orbit', t0: 0, t1: end, views, caps }];
+  // ---------- tower-centric shots: varied angles and shot sizes, all on the Burj ----------
+  // shot = {type, t0, t1, a:[yaw0,yaw1] deg (0 = camera south, 90 = east), e:[pitch0,pitch1], d:[dist0,dist1],
+  //         y:[targetY0,targetY1], fov, views:[[t,v]], caps:[[t,text]]}. Collisions with real buildings are avoided by
+  //         rotating the yaw window away from any footprint the camera path would enter.
+  const SH = {
+    wide:   { e: [9, 13],  d: [1500, 1380], y: [380, 400], fov: 1.0, arc: 26, kick: 'Burj Khalifa · 828 m' },
+    top:    { e: [62, 70], d: [950, 820],   y: [300, 260], fov: 1.0, arc: 30, kick: 'Plan view' },
+    core:   { e: [14, 18], d: [620, 560],   y: [330, 360], fov: 1.0, arc: 22, kick: 'Structure' },
+    facade: { e: [4, 10],  d: [250, 225],   y: [270, 330], fov: 0.85, arc: 18, kick: 'Facade · setbacks' },
+    spire:  { e: [2, 6],   d: [300, 270],   y: [610, 640], fov: 0.8, arc: 16, kick: 'Spire joint · level 156' },
+    base:   { e: [7, 11],  d: [360, 320],   y: [70, 90],   fov: 1.0, arc: 18, kick: 'Base' },
+    hero:   { e: [3, 5],   d: [175, 165],   y: [330, 420], fov: 1.25, arc: 14, kick: 'From the plaza' },
+    side:   { e: [7, 10],  d: [1500, 1420], y: [300, 260], fov: 1.0, arc: 8,  kick: 'Side view' },
+  };
+  function blockedAt(x, y, z) {
+    for (const b of B()) { if (b.tc !== undefined && false) continue; if (y > b.h + 6) continue;
+      if (x > b.x0 - 10 && x < b.x1 + 10 && z > b.z0 - 10 && z < b.z1 + 10) return true; }
+    return false;
   }
-  function orbitPose(t, end) {
-    const u = clamp(t / Math.max(end, 1));
-    const yaw = -70 + 300 * (0.15 * u + 0.85 * sm(u));             // ~5/6 of a circle over the whole shake
-    const pitch = 4 + 14 * sm(u);                                   // from near-ground toward a higher view
-    const dist = 1450 + 150 * Math.sin(u * Math.PI);
-    const ty = 330 + 60 * Math.sin(u * Math.PI * 0.9);
-    const y = yaw * Math.PI / 180, pp = pitch * Math.PI / 180;
-    return { p: [Math.sin(y) * Math.cos(pp) * dist, ty + Math.sin(pp) * dist, Math.cos(y) * Math.cos(pp) * dist], g: [0, ty, 0] };
+  function camAt(k, yaw, u) {
+    const pr = SH[k], e = (pr.e[0] + (pr.e[1] - pr.e[0]) * u) * Math.PI / 180, d = pr.d[0] + (pr.d[1] - pr.d[0]) * u, ty = pr.y[0] + (pr.y[1] - pr.y[0]) * u, a = yaw * Math.PI / 180;
+    return [Math.sin(a) * Math.cos(e) * d, ty + Math.sin(e) * d, Math.cos(a) * Math.cos(e) * d];
+  }
+  function freeYaw(k, want) {      // nearest yaw window (whole arc) whose camera path and sight line stay clear
+    const arc = SH[k].arc;
+    for (let off = 0; off <= 180; off += 7) for (const sg of [1, -1]) {
+      const y0 = want + off * sg; let ok = true;
+      for (let i = 0; i <= 6 && ok; i++) { const u = i / 6, c = camAt(k, y0 + arc * u, u);
+        if (blockedAt(c[0], c[1], c[2])) ok = false;
+        const ty = SH[k].y[0]; for (let j = 1; j < 6 && ok; j++) { const v = j / 6; if (blockedAt(c[0] * (1 - v), c[1] + (ty - c[1]) * v, c[2] * (1 - v))) ok = false; } }
+      if (ok) return y0;
+    }
+    return want;
+  }
+  let yawSeed = 20;
+  const shot = (type, t0, t1, views, caps, want) => {
+    yawSeed = want ?? (yawSeed + 117) % 360;              // jump to a clearly different angle each cut
+    const a0 = freeYaw(type, yawSeed);
+    return { type, t0, t1, a: [a0, a0 + SH[type].arc], views, caps };
+  };
+  function buildPlan(sc) {
+    const M = sc.M, end = sc.end, tS = sc.tSpire, tB = sc.tBreak, tI = sc.tImpact, P = [];
+    const tour = D.tour && D.tour.i > 0; yawSeed = 20;
+    const open = (t1) => { if (tour) P.push(shot('wide', 0, t1, [[0, 'normal']], [[0, D.tour && TOUR_CAP[M] || CAP.core]], 40));
+      else P.push(shot('wide', 0, t1, [[0, 'xray']], [[0, CAP.core]], 40)); };
+    const fill = (t0, t1, list) => { const n = Math.max(1, Math.round((t1 - t0) / 3.2)), d = (t1 - t0) / n; for (let k = 0; k < n; k++) { const f = list[k % list.length]; P.push(f(t0 + k * d, t0 + (k + 1) * d)); } };
+    if (isFinite(tB)) {                                     // M ≈ 9.6–10: spire, then base, then crush-down
+      open(Math.min(1.8, tS - 2.0));
+      const s0 = P[0].t1;
+      P.push(shot('spire', s0, tS + 0.9, [[s0, 'stress'], [tS, 'normal']], [[s0, CAP.spireJ], [tS, CAP.spireF]], 60));
+      const b0 = Math.max(tS + 0.9, tB - 2.2);
+      if (b0 > tS + 1.2) P.push(shot('core', tS + 0.9, b0, [[tS + 0.9, 'stress']], [[tS + 0.9, CAP.link]]));
+      P.push(shot('base', b0, tB + 0.8, [[b0, 'stress'], [tB, 'normal']], [[b0, CAP.bend], [tB, CAP.crush]], 30));
+      P.push(shot('side', tB + 0.8, tB + 3.4, [[tB + 0.8, 'normal']], [[tB + 0.8, CAP.down]], 0));
+      P.push(shot('hero', tB + 3.4, tI + 0.3, [[tB + 3.4, 'normal']], [[tB + 3.4, CAP.hypo]], 50));
+      fill(tI + 0.3, end, [(a, b) => shot('wide', a, b, [[a, 'normal']], [[a, CAP.rec]]), (a, b) => shot('top', a, b, [[a, 'normal']], [])]);
+    } else if (isFinite(tS)) {                              // M ≈ 8.8–9.6: the spire fails, the tower stands
+      open(2.0);
+      P.push(shot('facade', 2.0, Math.max(2.8, tS - 2.6), [[2.0, 'stress']], [[2.0, CAP.setback]], 50));
+      const s0 = P[P.length - 1].t1;
+      P.push(shot('spire', s0, tS + 1.4, [[s0, 'stress'], [tS, 'normal']], [[s0, CAP.spireJ], [tS, CAP.spireF]], 60));
+      P.push(shot('hero', tS + 1.4, tS + 4.2, [[tS + 1.4, 'normal']], [[tS + 1.4, CAP.spireSeis]], 40));
+      P.push(shot('core', tS + 4.2, tS + 7.4, [[tS + 4.2, 'stress']], [[tS + 4.2, CAP.link], [tS + 5.8, CAP.fuse]]));
+      P.push(shot('base', tS + 7.4, tS + 10.4, [[tS + 7.4, 'stress']], [[tS + 7.4, CAP.baseOk]], 30));
+      fill(tS + 10.4, end, [(a, b) => shot('wide', a, b, [[a, 'normal']], [[a, CAP.hypo]]), (a, b) => shot('top', a, b, [[a, 'normal']], [])]);
+    } else {                                                // M3–8.8: the tower takes it; tour its structure under load
+      open(2.4);
+      P.push(shot('top', 2.4, 5.2, [[2.4, 'xray']], [[2.4, CAP.wings]]));
+      P.push(shot('core', 5.2, 8.2, [[5.2, M >= 7.85 ? 'stress' : 'xray']], M >= 7.85 ? [[5.2, CAP.link], [6.7, CAP.fuse]] : [[5.2, CAP.joint]]));
+      P.push(shot('facade', 8.2, 11.2, [[8.2, 'normal']], [[8.2, CAP.setback]], 60));
+      P.push(shot('base', 11.2, 14.2, [[11.2, 'stress']], [[11.2, M >= 6.5 ? CAP.baseOk : CAP.bend]], 30));
+      P.push(shot('spire', 14.2, 17.2, [[14.2, 'stress']], [[14.2, CAP.spireSeis]], 60));
+      P.push(shot('hero', 17.2, 20.0, [[17.2, 'normal']], [[17.2, CAP.burjT]], 40));
+      fill(20.0, end, [(a, b) => shot('wide', a, b, [[a, 'normal']], [[a, CAP.wind]]), (a, b) => shot('top', a, b, [[a, 'normal']], [])]);
+    }
+    return P.filter((x) => x.t1 - x.t0 > 0.3 && x.t0 < end);
+  }
+  function towerShot(s, t, sc) {
+    const pr = SH[s.type], u = ease(clamp((t - s.t0) / (s.t1 - s.t0)));
+    const c = camAt(s.type, s.a[0] + (s.a[1] - s.a[0]) * u, u), ty = pr.y[0] + (pr.y[1] - pr.y[0]) * u;
+    // follow the tower while it leans and telescopes down
+    let tx = 0, dy = 0; if (isFinite(sc.tBreak) && t > sc.tBreak) { const k = clamp((t - sc.tBreak) / 4.5); tx = 90 * sm(k); dy = -Math.min(ty * 0.55, 260 * k * k); }
+    return { p: [c[0] + tx, Math.max(4, c[1] + dy * 0.6), c[2]], g: [tx, Math.max(20, ty + dy), 0], fov: pr.fov };
   }
 
   // ---------- run ----------
@@ -238,7 +290,7 @@ export function makeDirector({ camera, canvas, orbit, app, setView, root }) {
       else {
         let i = 0; for (let k = 0; k < D.plan.length; k++) if (t >= D.plan[k].t0 - 1e-6) i = k;
         const s = D.plan[i]; D.shotI = i;
-        if (s.type === 'orbit') { const o = D.tour ? orbitPose(D.tour.T, D.tour.total) : orbitPose(t, sc.end); put(o.p, o.g, 1); }
+        if (SH[s.type] && s.a) { const o = towerShot(s, t, sc); put(o.p, o.g, o.fov); }
         else { const u = ease(clamp((t - s.t0) / (s.t1 - s.t0))); put(L3(s.p[0], s.p[1], u), L3(s.g[0], s.g[1], u), s.fov); }
         let v = s.views[0][1]; for (const [vt, vv] of s.views) if (t >= vt - 1e-6) v = vv; applyView(v);
         const next = D.plan[i + 1], fadeOut = next && next.caps && next.caps[0] && next.caps[0][1] !== (s.caps?.at(-1)?.[1]) ? 1 - sm((t - (s.t1 - 0.25)) / 0.25) : 1;
