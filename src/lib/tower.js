@@ -76,7 +76,9 @@ class GB {
       const i1 = this.v(p1[0] * ra, a - base, p1[1] * ra, n1[0], 0, n1[1], a, s + len, f, k);
       const i2 = this.v(p1[0] * rb, b - base, p1[1] * rb, n1[0], 0, n1[1], b, s + len, f, k);
       const i3 = this.v(p0[0] * rb, b - base, p0[1] * rb, n0[0], 0, n0[1], b, s, f, k);
-      this.idx.push(i0, i1, i2, i0, i2, i3);
+      // winding must match the outward normal (polygon orientation varies): front face = (p1 - p0) × up
+      const ex = p1[0] - p0[0], ez = p1[1] - p0[1], fn = (-ez) * (n0[0] + n1[0]) + ex * (n0[1] + n1[1]);
+      if (fn >= 0) this.idx.push(i0, i1, i2, i0, i2, i3); else this.idx.push(i0, i2, i1, i0, i3, i2);
       s += len;
     }
   }
@@ -87,8 +89,14 @@ class GB {
     for (let i = 0; i < n; i++) {
       const a = ids[i], b = ids[(i + 1) % n];
       const ax = poly[i][0] - cx, az = poly[i][1] - cz, bx = poly[(i + 1) % n][0] - cx, bz = poly[(i + 1) % n][1] - cz;
-      if (ax * bz - az * bx < 0) this.idx.push(c, a, b); else this.idx.push(c, b, a);
+      this.tri(c, a, b, 0, 1, 0);
     }
+  }
+  tri(a, b, c, nx, ny, nz) {
+    const P = this.p, ax = P[a * 3], ay = P[a * 3 + 1], az = P[a * 3 + 2];
+    const ux = P[b * 3] - ax, uy = P[b * 3 + 1] - ay, uz = P[b * 3 + 2] - az, vx = P[c * 3] - ax, vy = P[c * 3 + 1] - ay, vz = P[c * 3 + 2] - az;
+    const d = (uy * vz - uz * vy) * nx + (uz * vx - ux * vz) * ny + (ux * vy - uy * vx) * nz;
+    if (d >= 0) this.idx.push(a, b, c); else this.idx.push(a, c, b);
   }
   ring(outer, inner, y, base, f, k) {   // terrace between two star outlines sharing angles (outer below, inner above)
     const n = outer.length;
@@ -98,8 +106,7 @@ class GB {
       const a = this.v(o0[0], y - base, o0[1], 0, 1, 0, y, Math.hypot(o0[0], o0[1]), f, k), b = this.v(o1[0], y - base, o1[1], 0, 1, 0, y, Math.hypot(o1[0], o1[1]), f, k);
       const c = this.v(i1[0], y - base, i1[1], 0, 1, 0, y, Math.hypot(i1[0], i1[1]), f, k), d = this.v(i0[0], y - base, i0[1], 0, 1, 0, y, Math.hypot(i0[0], i0[1]), f, k);
       // keep the face pointing up (+y): (c - a) × (b - a) must have +y
-      const ux = i1[0] - o0[0], uz = i1[1] - o0[1], wx = o1[0] - o0[0], wz = o1[1] - o0[1];
-      if (uz * wx - ux * wz > 0) this.idx.push(a, c, b, a, d, c); else this.idx.push(a, b, c, a, c, d);
+      this.tri(a, b, c, 0, 1, 0); this.tri(a, c, d, 0, 1, 0);
     }
   }
   geo() {
@@ -149,7 +156,7 @@ function buildSegment(s0, s1) {
           const l = Math.hypot(nx, nz) || 1; nx /= l; nz /= l; if (nx * (mx - cx) + nz * (mz - cz) < 0) { nx = -nx; nz = -nz; }
           const i0 = g.v(p0[0], a - s0, p0[1], nx, 0, nz, a, 0, 6, 1), i1 = g.v(p1[0], a - s0, p1[1], nx, 0, nz, a, 1, 6, 1);
           const i2 = g.v(q1[0], b - s0, q1[1], nx, 0, nz, b, 1, 6, 1), i3 = g.v(q0[0], b - s0, q0[1], nx, 0, nz, b, 0, 6, 1);
-          g.idx.push(i0, i1, i2, i0, i2, i3, i0, i2, i1, i0, i3, i2);
+          g.tri(i0, i1, i2, nx, 0, nz); g.tri(i0, i2, i3, nx, 0, nz);
         }
       }
     }
@@ -200,6 +207,10 @@ float mMetal = 0.85, mRough = 0.12; vec3 mEmis = vec3(0.0); float mGlass = 0.0;
     col = mix(glass, mix(glass, spC, 0.45), span); span *= 0.4; mRough = mix(gr, 0.35, span); mMetal = mix(0.55, 0.4, span);
     col = mix(col, vec3(0.78, 0.79, 0.81), fin); mRough = mix(mRough, 0.38, fin); mMetal = mix(mMetal, 0.25, fin);
     mGlass = (1.0 - fin) * (1.0 - span);
+    float mech = 0.0; const float MH[5] = float[](125.0, 245.0, 365.0, 470.0, 560.0);
+    for (int i = 0; i < 5; i++) mech = max(mech, 1.0 - smoothstep(3.2, 4.2, abs(vGY - MH[i])));
+    if (mech > 0.0) { float lv = 0.5 + 0.5 * smoothstep(0.3, 0.7, fract(vGY / 0.75)); vec3 lc = vec3(0.16, 0.17, 0.19) * (0.8 + 0.4 * lv);
+      col = mix(col, lc, mech * (1.0 - fin * 0.5)); mRough = mix(mRough, 0.55, mech); mMetal = mix(mMetal, 0.6, mech); mGlass *= 1.0 - mech; }
     if (broken > 0.5 && span < 0.5) { col = vec3(0.05, 0.045, 0.04); mRough = 0.95; mMetal = 0.0; mEmis = vec3(0.08, 0.05, 0.03) * h2; mGlass = 0.0; }
   } else if (vK < 1.5) {
     float band = smoothstep(0.85, 0.9, fract(vGY / 6.0));
@@ -260,8 +271,11 @@ export function makeTower(scenario = FILM) {
     segs.push({ s0, s1, g, mesh });
   }
   // podium ring (low base around the tower)
-  const pod = new THREE.Mesh(new THREE.CylinderGeometry(95, 100, 9, 48), new THREE.MeshStandardMaterial({ color: '#b9b2a6', roughness: 0.8 }));
-  pod.position.y = 3.5; pod.castShadow = pod.receiveShadow = true;
+  // Y-shaped stone plinth following the tower's own footprint (two steps), instead of a generic disc
+  const pg = new GB(), ol0 = outline(1), sc = (o, k) => o.map(([x, z]) => [x * k, z * k]);
+  pg.prism(sc(ol0, 1.55), -1, 1.2, 0, 7, 2, true); pg.cap(sc(ol0, 1.55), 1.2, 0, 7, 2);
+  pg.prism(sc(ol0, 1.22), 1.2, 6.5, 0, 7, 2, true); pg.cap(sc(ol0, 1.22), 6.5, 0, 7, 2);
+  const pod = new THREE.Mesh(pg.geo(), mat); pod.castShadow = pod.receiveShadow = true;
   const podG = new THREE.Group(); podG.add(pod); root.add(podG);
   const Q = new THREE.Quaternion(), Q2 = new THREE.Quaternion(), QR = new THREE.Quaternion(), V = new THREE.Vector3(), P = new THREE.Vector3(), C = new THREE.Vector3();
   const AZ = new THREE.Vector3(0, 0, 1), XA = new THREE.Vector3(1, 0, 0), YA = new THREE.Vector3(0, 1, 0);
