@@ -1,0 +1,28 @@
+/* Director mode — lower-third caption + camera-mode toggle. Same tokens/look as app/ui/ui.css (glassy dark, Inter, amber). */
+.bqd {
+  position: absolute; left: 16px; bottom: 320px; max-width: min(72vw, 520px);
+  display: flex; flex-direction: column; align-items: flex-start; gap: 10px; pointer-events: none; z-index: 2;
+  font-family: 'BQInter', Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; color: #fff;
+  -webkit-font-smoothing: antialiased;
+}
+.bqd-cap { opacity: 0; position: relative; padding: 6px 28px 6px 14px; border-radius: 4px; background: linear-gradient(90deg, rgba(8, 10, 14, 0.42), rgba(8, 10, 14, 0.18) 70%, rgba(8, 10, 14, 0)); will-change: opacity, transform; }
+.bqd-cap::before { content: ''; position: absolute; left: 0; top: 7px; bottom: 7px; width: 3px; border-radius: 2px; background: #FFB547; }
+.bqd-kick { font-size: 10px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; color: rgba(255, 255, 255, 0.72); text-shadow: 0 1px 6px rgba(0, 0, 0, 0.5); }
+.bqd-text { margin-top: 3px; font-size: 18px; line-height: 1.2; font-weight: 600; letter-spacing: -0.005em; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 2px 14px rgba(0, 0, 0, 0.55); }
+.bqd-toggle {
+  pointer-events: auto; display: inline-flex; padding: 3px; gap: 2px; border-radius: 999px;
+  background: rgba(14, 18, 26, 0.58); border: 1px solid rgba(255, 255, 255, 0.14);
+  -webkit-backdrop-filter: blur(18px) saturate(1.2); backdrop-filter: blur(18px) saturate(1.2); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28);
+}
+.bqd-toggle button {
+  font: inherit; font-size: 12px; font-weight: 600; letter-spacing: 0.02em; color: rgba(255, 255, 255, 0.72);
+  background: none; border: 0; border-radius: 999px; padding: 7px 13px; cursor: pointer;
+}
+.bqd-toggle button[aria-pressed="true"] { background: #fff; color: #0e1218; }
+.bqd-toggle button[data-m="director"][aria-pressed="true"]::before { content: ''; display: inline-block; width: 6px; height: 6px; margin-right: 7px; border-radius: 50%; background: #FFB547; vertical-align: 1px; }
+.bqd-toggle button:focus-visible { outline: 2px solid #FFB547; outline-offset: 2px; }
+@media (min-width: 900px) {
+  .bqd { left: 28px; bottom: 24px; max-width: calc(100vw - 380px - 80px); }
+  .bqd-kick { font-size: 11px; }
+  .bqd-text { font-size: 26px; }
+}

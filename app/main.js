@@ -6,6 +6,7 @@ import * as T from '../src/core/time.js';
 import { setup as setupWorld, updateWorld, W_ } from '../src/lib/dubai.js';
 import * as Q from '../src/lib/quake.js';
 import { makeOrbit } from './orbit.js';
+import { makeDirector } from './director.js';   // [director] multi-shot camera mode
 
 const qs = new URLSearchParams(location.search);
 const canvas = document.getElementById('gl');
@@ -54,10 +55,10 @@ window.app = app;
 
 function setMagnitude(M) {
   app.M = Math.round(M * 10) / 10; app.sc = Q.makeScenario(app.M); app.t = 0; app.running = false;
-  W_.scenario = app.sc; W_.tower.setScenario?.(app.sc); W_.rebuildFx?.(app.sc); app.seis.fill(0);
+  W_.scenario = app.sc; W_.tower.setScenario?.(app.sc); W_.rebuildFx?.(app.sc); app.seis.fill(0); director?.onReset();   // [director] hook
 }
-function shake() { if (app.t > 0) app.t = 0; app.seis.fill(0); app.running = true; }
-function reset() { app.t = 0; app.running = false; app.seis.fill(0); }
+function shake() { if (app.t > 0) app.t = 0; app.seis.fill(0); app.running = true; director?.onShake(); }   // [director] hook
+function reset() { app.t = 0; app.running = false; app.seis.fill(0); director?.onReset(); }   // [director] hook
 function setView(v) { app.view = v; }
 
 function resize() {
@@ -106,7 +107,7 @@ function buildState() {
     view: app.view, callouts, fps: app.fps, end: sc.end };
 }
 
-let orbit, ui, last = performance.now(), fpsAcc = 0, fpsN = 0;
+let orbit, ui, director, last = performance.now(), fpsAcc = 0, fpsN = 0;
 function frame(now) {
   const dt = Math.min(0.1, (now - last) / 1000); last = now;
   if (window.__capture) return;
@@ -128,6 +129,7 @@ function tick(dt) {
   const dim = 1 - 0.55 * Math.max(U.uStress?.value || 0, U.uXray?.value || 0);
   // lights from the world state
   const L = st.light;
+  director?.tick(dt);   // [director] drives orbit S/G before the orbit update
   orbit.update(dt);
   W_.sky.mesh.position.copy(camera.position);
   const scene = W_.scene;
@@ -162,7 +164,7 @@ async function boot() {
   try {
     const { createUI } = await import('./ui/ui.js');
     ui = createUI(document.getElementById('ui'), {
-      onMagnitude: (m) => setMagnitude(m), onShake: shake, onReset: reset, onView: setView, onSpeed: (s) => { app.speed = s; },
+      onMagnitude: (m) => setMagnitude(m), onShake: shake, onReset: reset, onView: (v) => { setView(v); director?.onUserView(); }, onSpeed: (s) => { app.speed = s; },
       initial: { M: app.M, view: app.view, speed: app.speed },
     });
   } catch (e) { console.error('UI', e); }
@@ -170,7 +172,9 @@ async function boot() {
   document.body.classList.add('ready');
   if (qs.has('t')) { app.t = +qs.get('t'); }
   if (qs.has('view')) { setView(qs.get('view')); ui?.setView?.(qs.get('view')); }
-  window.bq = { setMagnitude, shake, reset, setView: (v) => { setView(v); ui?.setView?.(v); }, tick, orbit };
+  // [director] multi-shot camera mode (own DOM + CSS in app/director.*)
+  director = makeDirector({ camera, canvas, orbit, app, root: document.getElementById('ui'), setView: (v) => { setView(v); ui?.setView?.(v); } });
+  window.bq = { setMagnitude, shake, reset, setView: (v) => { setView(v); ui?.setView?.(v); }, tick, orbit, director };
   window.ready = true;
   requestAnimationFrame(frame);
 }
