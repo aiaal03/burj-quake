@@ -171,9 +171,11 @@ async function boot() {
   if (qs.get('ui') === '0') document.getElementById('ui').style.display = 'none';
   document.body.classList.add('ready');
   if (qs.has('t')) { app.t = +qs.get('t'); }
+  if (qs.has('tour')) director.startTour();
   if (qs.has('view')) { setView(qs.get('view')); ui?.setView?.(qs.get('view')); }
   // [director] multi-shot camera mode (own DOM + CSS in app/director.*)
   director = makeDirector({ camera, canvas, orbit, app, root: document.getElementById('ui'), setView: (v) => { setView(v); ui?.setView?.(v); } });
+  director.setHooks({ setMagnitude, shake });
   window.bq = { setMagnitude, shake, reset, setView: (v) => { setView(v); ui?.setView?.(v); }, tick, orbit, director };
   window.ready = true;
   requestAnimationFrame(frame);

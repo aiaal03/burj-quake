@@ -42,18 +42,31 @@ export function makeDirector({ camera, canvas, orbit, app, setView, root }) {
   const css = document.createElement('link'); css.rel = 'stylesheet'; css.href = new URL('./director.css', import.meta.url).href; document.head.append(css);
   const box = document.createElement('div'); box.className = 'bqd';
   box.innerHTML = `<div class="bqd-cap" aria-live="polite"><div class="bqd-kick"></div><div class="bqd-text"></div></div>
-    <div class="bqd-toggle" role="group" aria-label="Camera mode"><button data-m="director" aria-pressed="true">Director</button><button data-m="free" aria-pressed="false">Free camera</button></div>`;
+    <div class="bqd-toggle" role="group" aria-label="Camera mode"><button data-m="director" aria-pressed="true">Director</button><button data-m="free" aria-pressed="false">Free camera</button></div>
+    <button class="bqd-tour" type="button" title="One continuous orbit: 5 s at M7, 7 s at M9, 9 s at M10">Tour  M7 → M9 → M10</button>`;
   root.append(box);
   const capEl = box.querySelector('.bqd-cap'), kickEl = box.querySelector('.bqd-kick'), textEl = box.querySelector('.bqd-text');
   const btns = [...box.querySelectorAll('.bqd-toggle button')];
+  const tourBtn = box.querySelector('.bqd-tour');
+  // Tour: escalating magnitudes in one continuous orbit (camera runs on tour time, not on each scenario's time)
+  const TOUR = [{ M: 7, d: 5, sp: 1 }, { M: 9, d: 7, sp: 1 }, { M: 10, d: 9, sp: 1.3 }];
+  const TOUR_CAP = { 7: 'M7 · low-rises fail first', 9: 'M9 · the spire joint gives', 10: 'M10 · beyond anything recorded' };
+  let hooks = null;
 
-  const D = { offX: 0, offY: 0, mode: 'director', active: false, phase: 'idle', plan: [], aft: 0, viewLock: false, lastView: null, baseFov: camera.fov, shotI: -1, sc: null };
+  const D = { tour: null, switching: false, offX: 0, offY: 0, mode: 'director', active: false, phase: 'idle', plan: [], aft: 0, viewLock: false, lastView: null, baseFov: camera.fov, shotI: -1, sc: null };
   function setMode(m) {
     D.mode = m; btns.forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.m === m)));
-    if (m === 'free') stop(false);
+    if (m === 'free') { if (D.tour) { D.tour = null; app.speed = 1; tourBtn.classList.remove('is-on'); } stop(false); }
     else if (app.running && app.sc) start();
   }
   btns.forEach((b) => b.addEventListener('click', () => setMode(b.dataset.m)));
+  tourBtn.addEventListener('click', () => startTour());
+  function startTour() {
+    if (!hooks) return;
+    D.tour = { i: -1, T: 0, total: TOUR.reduce((a, s) => a + s.d, 0) }; setMode('director');
+    tourBtn.classList.add('is-on');
+  }
+  function endTour() { if (!D.tour) return; D.tour = null; app.speed = 1; tourBtn.classList.remove('is-on'); D.phase = 'after'; D.aft = 0; }
   const userGrab = () => { if (D.mode === 'director') setMode('free'); };
   canvas.addEventListener('pointerdown', userGrab); canvas.addEventListener('wheel', userGrab, { passive: true });
 
@@ -141,15 +154,15 @@ export function makeDirector({ camera, canvas, orbit, app, setView, root }) {
     let last = null;
     for (let t = 0; t <= end; t += 0.05) {
       let v;
-      if (t < 2.2) v = 'xray';
+      if (t < 2.2 && !(D.tour && D.tour.i > 0)) v = 'xray';
       else if (isFinite(tB) && t >= tB + 0.3) v = 'normal';
       else if (isFinite(tS) && t >= tS + 0.2 && t < tS + 1.6) v = 'normal';            // watch the spire go
       else if (M < 6.5) v = t > 5 && t < 9.5 ? 'stress' : 'normal';                      // show how little load there is
       else v = sc.stressMax(t) >= 0.45 ? 'stress' : 'normal';
       if (v !== last) { views.push([t, v]); last = v; }
     }
-    caps.push([0, CAP.core]);
-    caps.push([2.4, CAP.burjT]);
+    if (D.tour && TOUR_CAP[M]) caps.push([0, TOUR_CAP[M]]);
+    else { caps.push([0, CAP.core]); caps.push([2.4, CAP.burjT]); }
     if (M < 6.5) caps.push([5.2, CAP.baseOk], [9.8, CAP.wind]);
     else if (!isFinite(tS)) { caps.push([5.0, CAP.bend]); if (M >= 7.85) caps.push([8.0, CAP.fuse]); caps.push([11.5, CAP.baseOk]); }
     else {
@@ -207,6 +220,16 @@ export function makeDirector({ camera, canvas, orbit, app, setView, root }) {
   function applyView(v) { if (D.viewLock || v === D.lastView) return; D.lastView = v; setView(v); }
 
   function tick(dt) {
+    if (D.tour) {
+      const tr = D.tour; tr.T = tr.i < 0 ? 0 : tr.T + dt;
+      let k = 0, acc = 0; for (let j = 0; j < TOUR.length; j++) { if (tr.T >= acc - 1e-9) k = j; acc += TOUR[j].d; }
+      if (tr.T >= tr.total) endTour();
+      else if (k !== tr.i) {
+        tr.i = k; D.switching = true;
+        hooks.setMagnitude(TOUR[k].M); app.speed = TOUR[k].sp; hooks.shake();
+        D.switching = false;
+      }
+    }
     if (!D.active) return;
     if (D.sc !== app.sc) { stop(); return; }
     const sc = D.sc, t = app.t;
@@ -215,7 +238,7 @@ export function makeDirector({ camera, canvas, orbit, app, setView, root }) {
       else {
         let i = 0; for (let k = 0; k < D.plan.length; k++) if (t >= D.plan[k].t0 - 1e-6) i = k;
         const s = D.plan[i]; D.shotI = i;
-        if (s.type === 'orbit') { const o = orbitPose(t, sc.end); put(o.p, o.g, 1); }
+        if (s.type === 'orbit') { const o = D.tour ? orbitPose(D.tour.T, D.tour.total) : orbitPose(t, sc.end); put(o.p, o.g, 1); }
         else { const u = ease(clamp((t - s.t0) / (s.t1 - s.t0))); put(L3(s.p[0], s.p[1], u), L3(s.g[0], s.g[1], u), s.fov); }
         let v = s.views[0][1]; for (const [vt, vv] of s.views) if (t >= vt - 1e-6) v = vv; applyView(v);
         const next = D.plan[i + 1], fadeOut = next && next.caps && next.caps[0] && next.caps[0][1] !== (s.caps?.at(-1)?.[1]) ? 1 - sm((t - (s.t1 - 0.25)) / 0.25) : 1;
@@ -237,7 +260,9 @@ export function makeDirector({ camera, canvas, orbit, app, setView, root }) {
   return {
     tick, start, stop, setMode, layout,
     onShake() { stop(false); if (D.mode === 'director') start(); },
-    onReset() { stop(true); },
+    onReset() { if (D.switching) return; if (D.tour) { D.tour = null; app.speed = 1; tourBtn.classList.remove('is-on'); } stop(true); },
+    setHooks(h) { hooks = h; },
+    startTour,
     onUserView() { if (D.active) D.viewLock = true; },
     get state() { return D; },
   };

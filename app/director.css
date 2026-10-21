@@ -26,3 +26,9 @@
   .bqd-kick { font-size: 11px; }
   .bqd-text { font-size: 26px; }
 }
+
+.bqd-tour { pointer-events: auto; font: 600 12px/1 Inter, system-ui, sans-serif; letter-spacing: .06em; color: #fff;
+  padding: 9px 14px; border-radius: 999px; border: 1px solid rgba(255,255,255,.22); background: rgba(10,12,18,.45);
+  -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); cursor: pointer; white-space: pre; }
+.bqd-tour:hover { border-color: rgba(255,255,255,.4); }
+.bqd-tour.is-on { color: #1d1406; background: #ffb547; border-color: #ffb547; }
